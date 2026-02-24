@@ -41,9 +41,7 @@ export class GameScene extends Phaser.Scene implements GameContext {
   private inventoryBar!: InventoryBar;
 
   // UI — HUD bar
-  private hudBarGraphics!: Phaser.GameObjects.Graphics;
   private turnDrainBar!: Phaser.GameObjects.Graphics;
-  private roundValueText!: Phaser.GameObjects.Text;
   private scoreValueText!: Phaser.GameObjects.Text;
   private turnCountText!: Phaser.GameObjects.Text;
   // UI — essence pill
@@ -306,13 +304,13 @@ export class GameScene extends Phaser.Scene implements GameContext {
   }
 
   private drawHUDBar(): void {
-    // Background panel
-    this.hudBarGraphics = this.add.graphics();
-    this.hudBarGraphics.fillStyle(0x111122, 1);
-    this.hudBarGraphics.fillRect(0, 0, GAME_CONFIG.width, 80);
-    this.hudBarGraphics.lineStyle(1, 0x333355, 0.7);
-    this.hudBarGraphics.lineBetween(0, 80, GAME_CONFIG.width, 80);
-    this.hudBarGraphics.setDepth(10);
+    // Background panel (local var — drawn once, never redrawn)
+    const hudBar = this.add.graphics();
+    hudBar.fillStyle(0x111122, 1);
+    hudBar.fillRect(0, 0, GAME_CONFIG.width, 80);
+    hudBar.lineStyle(1, 0x333355, 0.7);
+    hudBar.lineBetween(0, 80, GAME_CONFIG.width, 80);
+    hudBar.setDepth(10);
 
     // Turn drain bar (drawn separately so it can be redrawn)
     this.turnDrainBar = this.add.graphics();
@@ -326,7 +324,8 @@ export class GameScene extends Phaser.Scene implements GameContext {
       fontStyle: 'bold',
     }).setOrigin(0.5, 0).setDepth(11);
 
-    this.roundValueText = this.add.text(120, 28, `${this.round}`, {
+    // Round value — never changes mid-game, no need to store as class property
+    this.add.text(120, 28, `${this.round}`, {
       fontSize: '32px',
       color: '#ffffff',
       fontFamily: 'Arial',
