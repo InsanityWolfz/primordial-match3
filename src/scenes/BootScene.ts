@@ -7,6 +7,14 @@ export class BootScene extends Phaser.Scene {
 
   preload(): void {
     this.createLoadingBar();
+
+    // Gem sprites
+    this.load.image('gem-fire',      'assets/sprites/gem-fire.png');
+    this.load.image('gem-water',     'assets/sprites/gem-water.png');
+    this.load.image('gem-earth',     'assets/sprites/gem-earth.png');
+    this.load.image('gem-air',       'assets/sprites/gem-air.png');
+    this.load.image('gem-lightning', 'assets/sprites/gem-lightning.png');
+    this.load.image('gem-nature',    'assets/sprites/gem-nature.png');
   }
 
   createLoadingBar(): void {

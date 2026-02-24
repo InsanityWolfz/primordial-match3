@@ -8,7 +8,7 @@ export class Gem {
   gridCol: number;
   type: GemType;
   gemSize: number;
-  sprite: Phaser.GameObjects.Graphics;
+  sprite: Phaser.GameObjects.Image;
   selectionRing: Phaser.GameObjects.Graphics | null;
   isSelected: boolean;
   isMatched: boolean;
@@ -30,22 +30,17 @@ export class Gem {
     this.sprite = this.createSprite();
   }
 
-  createSprite(): Phaser.GameObjects.Graphics {
+  createSprite(): Phaser.GameObjects.Image {
     const pos = this.getWorldPosition();
+    const key = `gem-${this.type.name}`;
 
-    const graphics = this.scene.add.graphics();
-    graphics.fillStyle(this.type.color);
-    graphics.fillCircle(0, 0, this.gemSize / 2);
-    graphics.setPosition(pos.x, pos.y);
+    const image = this.scene.add.image(pos.x, pos.y, key);
+    image.setDisplaySize(this.gemSize, this.gemSize);
+    image.setInteractive({ useHandCursor: true });
 
-    graphics.setInteractive(
-      new Phaser.Geom.Circle(0, 0, this.gemSize / 2),
-      Phaser.Geom.Circle.Contains,
-    );
+    (image as Phaser.GameObjects.Image & { gemData: Gem }).gemData = this;
 
-    (graphics as Phaser.GameObjects.Graphics & { gemData: Gem }).gemData = this;
-
-    return graphics;
+    return image;
   }
 
   getWorldPosition(): { x: number; y: number } {
@@ -80,7 +75,8 @@ export class Gem {
     }
     this.selectionRing.clear();
     this.selectionRing.lineStyle(3, 0xffffff, 1);
-    this.selectionRing.strokeCircle(0, 0, this.gemSize / 2 + 4);
+    const half = this.gemSize / 2 + 4;
+    this.selectionRing.strokeRect(-half, -half, (half * 2), (half * 2));
     this.selectionRing.setPosition(this.sprite.x, this.sprite.y);
   }
 
@@ -131,7 +127,7 @@ export class Gem {
   playDamageFlash(): void {
     const flash = this.scene.add.graphics();
     flash.fillStyle(0xff0000, 0.5);
-    flash.fillCircle(0, 0, this.gemSize / 2);
+    flash.fillRect(-this.gemSize / 2, -this.gemSize / 2, this.gemSize, this.gemSize);
     flash.setPosition(this.sprite.x, this.sprite.y);
 
     this.scene.tweens.add({
