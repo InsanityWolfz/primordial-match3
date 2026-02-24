@@ -1,16 +1,23 @@
 import Phaser from 'phaser';
 import { GAME_CONFIG } from '../config/gameConfig.ts';
 import type { HazardDefinition } from '../config/hazardConfig.ts';
+import type { Gem } from './Gem.ts';
 
 export class Hazard {
+  // Map hazard IDs to their sprite keys — add entries here as sprites are created
+  private static readonly SPRITE_KEYS: Partial<Record<string, string>> = {
+    ice: 'hazard-ice',
+  };
+
   scene: Phaser.Scene;
   gridRow: number;
   gridCol: number;
   def: HazardDefinition;
   hp: number;
   maxHp: number;
-  overlay: Phaser.GameObjects.Graphics;
+  overlay: Phaser.GameObjects.Image | Phaser.GameObjects.Graphics;
   hpText: Phaser.GameObjects.Text | null = null;
+  private gem: Gem | null = null;
 
   constructor(scene: Phaser.Scene, row: number, col: number, def: HazardDefinition, initialHp?: number) {
     this.scene = scene;
@@ -38,6 +45,17 @@ export class Hazard {
     }
   }
 
+  /**
+   * Link the gem beneath this hazard. Dims it while the hazard is alive,
+   * restores it when the hazard is destroyed.
+   */
+  setGem(gem: Gem): void {
+    this.gem = gem;
+    if (Hazard.SPRITE_KEYS[this.def.id]) {
+      gem.sprite.setAlpha(0.35);
+    }
+  }
+
   private getWorldPosition(): { x: number; y: number } {
     const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
     return {
@@ -46,8 +64,17 @@ export class Hazard {
     };
   }
 
-  private createOverlay(): Phaser.GameObjects.Graphics {
+  private createOverlay(): Phaser.GameObjects.Image | Phaser.GameObjects.Graphics {
     const pos = this.getWorldPosition();
+    const spriteKey = Hazard.SPRITE_KEYS[this.def.id];
+
+    if (spriteKey) {
+      const image = this.scene.add.image(pos.x, pos.y, spriteKey);
+      image.setDisplaySize(GAME_CONFIG.gemSize, GAME_CONFIG.gemSize);
+      image.setDepth(5);
+      return image;
+    }
+
     const graphics = this.scene.add.graphics();
     graphics.setPosition(pos.x, pos.y);
     graphics.setDepth(5);
@@ -229,7 +256,7 @@ export class Hazard {
 
   async playDestroyAnimation(duration: number): Promise<void> {
     return new Promise((resolve) => {
-      const targets: (Phaser.GameObjects.Graphics | Phaser.GameObjects.Text)[] = [this.overlay];
+      const targets: (Phaser.GameObjects.Image | Phaser.GameObjects.Graphics | Phaser.GameObjects.Text)[] = [this.overlay];
       if (this.hpText) targets.push(this.hpText);
 
       this.scene.tweens.add({
@@ -294,6 +321,11 @@ export class Hazard {
   }
 
   destroy(): void {
+    // Restore gem visibility if it was dimmed
+    if (this.gem) {
+      this.gem.sprite.setAlpha(1);
+      this.gem = null;
+    }
     this.overlay.destroy();
     if (this.hpText) {
       this.hpText.destroy();

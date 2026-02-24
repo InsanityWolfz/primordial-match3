@@ -58,10 +58,10 @@ export class Grid {
 
   /**
    * Find all matching positions (3+ in a row).
-   * Gems under hazards still participate in matches — the hazard absorbs
-   * damage when the match resolves but does not block match detection.
+   * Gems under hazards are treated as blockers — they break runs and
+   * cannot themselves be part of a match.
    */
-  findMatches(_isHazarded?: (row: number, col: number) => boolean): { row: number; col: number }[] {
+  findMatches(isHazarded?: (row: number, col: number) => boolean): { row: number; col: number }[] {
     const matched = new Set<string>();
 
     // Horizontal scan
@@ -70,10 +70,12 @@ export class Grid {
       for (let col = 1; col <= this.cols; col++) {
         const current = col < this.cols ? this.grid[row][col] : null;
         const prev = this.grid[row][runStart];
-        const runsMatch = current && prev && current.type.id === prev.type.id;
+        const currentBlocked = current && isHazarded?.(row, col);
+        const prevBlocked = prev && isHazarded?.(row, runStart);
+        const runsMatch = current && prev && !currentBlocked && !prevBlocked && current.type.id === prev.type.id;
         if (runsMatch) continue;
         const runLength = col - runStart;
-        if (runLength >= 3 && prev) {
+        if (runLength >= 3 && prev && !prevBlocked) {
           for (let c = runStart; c < col; c++) {
             matched.add(`${row},${c}`);
           }
@@ -88,10 +90,12 @@ export class Grid {
       for (let row = 1; row <= this.rows; row++) {
         const current = row < this.rows ? this.grid[row][col] : null;
         const prev = this.grid[runStart][col];
-        const runsMatch = current && prev && current.type.id === prev.type.id;
+        const currentBlocked = current && isHazarded?.(row, col);
+        const prevBlocked = prev && isHazarded?.(runStart, col);
+        const runsMatch = current && prev && !currentBlocked && !prevBlocked && current.type.id === prev.type.id;
         if (runsMatch) continue;
         const runLength = row - runStart;
-        if (runLength >= 3 && prev) {
+        if (runLength >= 3 && prev && !prevBlocked) {
           for (let r = runStart; r < row; r++) {
             matched.add(`${r},${col}`);
           }

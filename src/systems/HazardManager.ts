@@ -109,6 +109,8 @@ export class HazardManager {
       const pos = available[i];
       const hazard = new Hazard(this.scene, pos.row, pos.col, def);
       this.hazardGrid[pos.row][pos.col] = hazard;
+      const gem = this.grid.getGem(pos.row, pos.col);
+      if (gem) hazard.setGem(gem);
     }
   }
 
@@ -292,6 +294,8 @@ export class HazardManager {
       const target = candidates[Math.floor(Math.random() * candidates.length)];
       const newHazard = new Hazard(this.scene, target.row, target.col, spreader.def, spreader.hp);
       this.hazardGrid[target.row][target.col] = newHazard;
+      const spreadGem = this.grid.getGem(target.row, target.col);
+      if (spreadGem) newHazard.setGem(spreadGem);
       newHazards.push(newHazard);
       spawned++;
     }

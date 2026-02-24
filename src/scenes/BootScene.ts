@@ -8,6 +8,9 @@ export class BootScene extends Phaser.Scene {
   preload(): void {
     this.createLoadingBar();
 
+    // Hazard sprites
+    this.load.image('hazard-ice', 'assets/sprites/hazard-ice.png');
+
     // Gem sprites
     this.load.image('gem-fire',      'assets/sprites/gem-fire.png');
     this.load.image('gem-water',     'assets/sprites/gem-water.png');
