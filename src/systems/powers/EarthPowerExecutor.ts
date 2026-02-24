@@ -1,0 +1,121 @@
+import { GAME_CONFIG } from '../../config/gameConfig.ts';
+import { Gem } from '../../entities/Gem.ts';
+import type { GameContext } from '../../types/GameContext.ts';
+import type { CascadeSystem } from '../CascadeSystem.ts';
+import type { DamageSystem } from '../DamageSystem.ts';
+import type { PassiveManager } from '../PassiveManager.ts';
+import { getPowerUpDef } from '../../config/powerUps.ts';
+
+export class EarthPowerExecutor {
+  private ctx: GameContext;
+  private cascadeSystem: CascadeSystem;
+  private damageSystem: DamageSystem;
+  private passiveManager: PassiveManager;
+
+  constructor(ctx: GameContext, cascadeSystem: CascadeSystem, damageSystem: DamageSystem, passiveManager: PassiveManager) {
+    this.ctx = ctx;
+    this.cascadeSystem = cascadeSystem;
+    this.damageSystem = damageSystem;
+    this.passiveManager = passiveManager;
+  }
+
+  private getParams(id: string, level: number): Record<string, number> {
+    const def = getPowerUpDef(id);
+    if (!def) return {};
+    const clampedLevel = Math.min(Math.max(level, 1), def.maxLevel);
+    return def.levels[clampedLevel - 1]?.params ?? {};
+  }
+
+  /**
+   * Earthquake: shuffle all gems + deal damage to N random gems (targetCount).
+   * Passive bonuses: Tectonic Plates (bonus turns), Fissure (bonus damage).
+   */
+  async executeEarthquake(level: number): Promise<void> {
+    const params = this.getParams('earthquake', level);
+    const targetCount = params.targetCount ?? 12;
+    let damage = params.damage ?? 1;
+
+    // Passive: refund
+    const passiveResult = this.passiveManager.onDamageDealt('earth', damage, 'earthquake');
+    damage = passiveResult.modifiedDamage;
+
+    // Passive: earthquake bonuses
+    const eqPassive = this.passiveManager.onEarthquakeUsed();
+    damage += eqPassive.bonusDamage;
+
+    // Collect all gems and shuffle them (Fisher-Yates)
+    const allGems: Gem[] = [];
+    for (let r = 0; r < this.ctx.grid.rows; r++) {
+      for (let c = 0; c < this.ctx.grid.cols; c++) {
+        const gem = this.ctx.grid.getGem(r, c);
+        if (gem) allGems.push(gem);
+      }
+    }
+
+    for (let i = allGems.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [allGems[i], allGems[j]] = [allGems[j], allGems[i]];
+    }
+
+    // Reassign positions (shuffle the board)
+    let idx = 0;
+    const movePromises: Promise<void>[] = [];
+    for (let r = 0; r < this.ctx.grid.rows; r++) {
+      for (let c = 0; c < this.ctx.grid.cols; c++) {
+        const gem = allGems[idx++];
+        this.ctx.grid.setGem(r, c, gem);
+        gem.setGridPosition(r, c);
+        const pos = gem.getWorldPosition();
+        movePromises.push(gem.moveTo(pos.x, pos.y, 400));
+      }
+    }
+    await Promise.all(movePromises);
+
+    // Deal damage to targetCount random gems (not the whole board)
+    if (damage > 0) {
+      // Build list of all occupied positions and pick N at random
+      const allPositions: { row: number; col: number }[] = [];
+      for (let r = 0; r < this.ctx.grid.rows; r++) {
+        for (let c = 0; c < this.ctx.grid.cols; c++) {
+          if (this.ctx.grid.getGem(r, c)) {
+            allPositions.push({ row: r, col: c });
+          }
+        }
+      }
+
+      // Fisher-Yates on positions, then take the first targetCount
+      for (let i = allPositions.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [allPositions[i], allPositions[j]] = [allPositions[j], allPositions[i]];
+      }
+      const targets = allPositions.slice(0, targetCount);
+
+      const result = await this.damageSystem.dealDamage(targets, damage, 'earth');
+      this.ctx.score += result.destroyed.length * GAME_CONFIG.scorePerGem;
+      this.ctx.updateScoreDisplay();
+
+      if (result.destroyed.length > 0) {
+        await this.cascadeSystem.applyGravityAndSpawn();
+      }
+    }
+
+    // Process any matches created by the shuffle
+    await this.ctx.delay(200);
+    const matches = this.ctx.findMatches();
+    if (matches.length > 0) {
+      await this.cascadeSystem.processCascade(matches, 1);
+    }
+
+    // Passive: Tectonic Plates bonus turns
+    if (eqPassive.bonusTurns > 0) {
+      this.ctx.turnsRemaining += eqPassive.bonusTurns;
+      this.ctx.updateTurnsDisplay();
+    }
+
+    // Passive: refund charge
+    if (passiveResult.refundCharge) {
+      const owned = this.ctx.ownedPowerUps.find(p => p.powerUpId === 'earthquake');
+      if (owned) owned.charges++;
+    }
+  }
+}
