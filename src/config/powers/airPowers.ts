@@ -171,7 +171,7 @@ export const UPDRAFT: PowerUpDefinition = {
   id: 'updraft',
   name: 'Updraft',
   element: 'air',
-  category: 'passivePower',
+  category: 'passive',
   maxLevel: 20,
   requires: 'gust',
   levels: updraftLevels,

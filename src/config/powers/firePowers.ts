@@ -144,7 +144,7 @@ export const KINDLING: PowerUpDefinition = {
   id: 'kindling',
   name: 'Kindling',
   element: 'fire',
-  category: 'passivePower',
+  category: 'passive',
   maxLevel: 20,
   requires: 'fireball',
   levels: kindlingLevels,

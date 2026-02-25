@@ -62,7 +62,6 @@ export class GameScene extends Phaser.Scene implements GameContext {
     this.initializeGame(data);
     this.initializeSystems();
     this.renderGrid();
-    this.hudManager.createPowerUpHUD();
     this.createDebugButtons();
     this.setupDebugKeys();
     this.cascadeSystem.clearInitialMatches().then(() => {
@@ -108,17 +107,18 @@ export class GameScene extends Phaser.Scene implements GameContext {
     this.drawHUDBar();
     this.drawEssencePill();
 
-    // Hazard status display (below grid)
+    // Hazard status display (sits at top of the inventory bar area, depth above bar bg)
     const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
     const gridBottom = GAME_CONFIG.gridOffsetY + GAME_CONFIG.gridRows * cellSize;
+    const barY = gridBottom + 8;
     this.hazardsCleared = false;
     this.hazardClearedBanner = null;
-    this.hazardStatusText = this.add.text(GAME_CONFIG.width / 2, gridBottom + 28, '', {
-      fontSize: '18px',
+    this.hazardStatusText = this.add.text(GAME_CONFIG.width / 2, barY + 16, '', {
+      fontSize: '15px',
       color: '#ff8844',
       fontFamily: 'Arial',
       fontStyle: 'bold',
-    }).setOrigin(0.5, 0.5);
+    }).setOrigin(0.5, 0.5).setDepth(60);
   }
 
   private initializeSystems(): void {
@@ -137,7 +137,7 @@ export class GameScene extends Phaser.Scene implements GameContext {
     // CascadeSystem (post-match passives wired through powerUpExecutor)
     this.cascadeSystem = new CascadeSystem(
       this,
-      () => this.powerUpExecutor.executePostMatchPassives(),
+      (matchPositions) => this.powerUpExecutor.executePostMatchPassives(matchPositions),
     );
 
     this.powerUpExecutor = new PowerUpExecutor(this, this.cascadeSystem, {
@@ -148,6 +148,7 @@ export class GameScene extends Phaser.Scene implements GameContext {
         this.updateHazardStatus();
         this.checkHazardsCleared();
       },
+      onFlashCard: (id) => this.hudManager.flashCard(id),
     });
 
     // HazardManager
@@ -172,9 +173,17 @@ export class GameScene extends Phaser.Scene implements GameContext {
     // Wire CascadeSystem to PassiveManager for match hooks
     this.cascadeSystem.setPassiveManager(this.passiveManager);
 
-    // Inventory bar at bottom of screen
-    this.inventoryBar = new InventoryBar(this, this.ownedPowerUps);
+    // Inventory bar — fills from grid bottom to screen bottom
+    const cellSize2 = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
+    const gridBottom2 = GAME_CONFIG.gridOffsetY + GAME_CONFIG.gridRows * cellSize2;
+    const barY = gridBottom2 + 8;
+    this.inventoryBar = new InventoryBar(this, this.ownedPowerUps, barY, {
+      onActivatePowerUp: (id) => this.hudManager.activateById(id),
+    });
     this.inventoryBar.create();
+
+    // Wire inventory bar into HudManager so it can update card visuals
+    this.hudManager.setInventoryBar(this.inventoryBar);
   }
 
   // ──────────────── GameContext UI updates ────────────────
@@ -618,7 +627,8 @@ export class GameScene extends Phaser.Scene implements GameContext {
   }
 
   createDebugButtons(): void {
-    const btnY = GAME_CONFIG.height - 30;
+    // Positioned top-right, just below the HUD bar (y=0–80) + drain bar (y=76–80)
+    const btnY = 90;
 
     // "+100" button
     const addText = this.add.text(GAME_CONFIG.width - 130, btnY, '+100', {
@@ -627,7 +637,7 @@ export class GameScene extends Phaser.Scene implements GameContext {
       fontFamily: 'Arial',
       backgroundColor: '#222222',
       padding: { x: 6, y: 4 },
-    }).setOrigin(0.5, 0.5);
+    }).setOrigin(0.5, 0.5).setDepth(12);
     addText.setInteractive({ useHandCursor: true });
     addText.on('pointerdown', () => {
       this.essence += 100;
@@ -643,7 +653,7 @@ export class GameScene extends Phaser.Scene implements GameContext {
       fontFamily: 'Arial',
       backgroundColor: '#222222',
       padding: { x: 6, y: 4 },
-    }).setOrigin(0.5, 0.5);
+    }).setOrigin(0.5, 0.5).setDepth(12);
     shopText.setInteractive({ useHandCursor: true });
     shopText.on('pointerdown', () => {
       this.turnsRemaining = 0;

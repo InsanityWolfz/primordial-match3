@@ -104,16 +104,16 @@ export class AirPowerExecutor {
    * Windslash: passive power that triggers after match with a chance.
    * Hits a random column for damage.
    */
-  async executeWindslashPassive(): Promise<void> {
+  async executeWindslashPassive(): Promise<boolean> {
     const windslashOwned = this.ctx.ownedPowerUps.find(p => p.powerUpId === 'windslash');
-    if (!windslashOwned) return;
+    if (!windslashOwned) return false;
 
     const params = this.getParams('windslash', windslashOwned.level);
     const triggerChance = params.triggerChance ?? 10;
     const damage = params.damage ?? 1;
 
     // Roll for trigger
-    if (Math.random() * 100 >= triggerChance) return;
+    if (Math.random() * 100 >= triggerChance) return false;
 
     // Pick random column
     const col = Math.floor(Math.random() * this.ctx.grid.cols);
@@ -124,7 +124,7 @@ export class AirPowerExecutor {
       }
     }
 
-    if (positions.length === 0) return;
+    if (positions.length === 0) return false;
 
     // Slash visual
     const scene = this.ctx.phaserScene;
@@ -148,5 +148,6 @@ export class AirPowerExecutor {
 
     this.ctx.score += result.destroyed.length * GAME_CONFIG.scorePerGem;
     this.ctx.updateScoreDisplay();
+    return true;
   }
 }

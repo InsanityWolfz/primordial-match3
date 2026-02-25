@@ -144,7 +144,7 @@ export const CHARGE_UP: PowerUpDefinition = {
   id: 'chargeUp',
   name: 'Charge Up',
   element: 'lightning',
-  category: 'passivePower',
+  category: 'passive',
   maxLevel: 20,
   requires: 'chainstrike',
   levels: chargeUpLevels,

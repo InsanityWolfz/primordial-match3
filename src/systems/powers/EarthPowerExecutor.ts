@@ -43,6 +43,9 @@ export class EarthPowerExecutor {
     const eqPassive = this.passiveManager.onEarthquakeUsed();
     damage += eqPassive.bonusDamage;
 
+    // Release hazard-gem associations before shuffle so gems restore full alpha
+    this.ctx.hazardManager.releaseAllGems();
+
     // Collect all gems and shuffle them (Fisher-Yates)
     const allGems: Gem[] = [];
     for (let r = 0; r < this.ctx.grid.rows; r++) {
@@ -70,6 +73,9 @@ export class EarthPowerExecutor {
       }
     }
     await Promise.all(movePromises);
+
+    // Re-associate hazards with the gems now at their positions
+    this.ctx.hazardManager.reassociateGems();
 
     // Deal damage to targetCount random gems (not the whole board)
     if (damage > 0) {

@@ -51,6 +51,35 @@ export class HazardManager {
   }
 
   /**
+   * Release all hazard gem references, restoring gem alphas to full.
+   * Call before earthquake shuffle so gems can be repositioned safely.
+   */
+  releaseAllGems(): void {
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        const hazard = this.hazardGrid[r][c];
+        if (hazard) hazard.releaseGem();
+      }
+    }
+  }
+
+  /**
+   * Re-associate each hazard with the gem now at its grid position.
+   * Call after earthquake shuffle so hazards dim the correct gems.
+   */
+  reassociateGems(): void {
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        const hazard = this.hazardGrid[r][c];
+        if (hazard) {
+          const gem = this.grid.getGem(r, c);
+          if (gem) hazard.setGem(gem);
+        }
+      }
+    }
+  }
+
+  /**
    * Count remaining hazards on the board.
    */
   getRemainingCount(): number {

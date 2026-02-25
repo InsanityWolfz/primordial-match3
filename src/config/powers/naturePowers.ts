@@ -114,7 +114,7 @@ export const OVERGROWTH: PowerUpDefinition = {
   id: 'overgrowth',
   name: 'Overgrowth',
   element: 'nature',
-  category: 'passivePower',
+  category: 'passive',
   maxLevel: 20,
   requires: 'transmute',
   levels: overgrowthLevels,

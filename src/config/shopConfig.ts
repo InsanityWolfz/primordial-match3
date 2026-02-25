@@ -4,18 +4,18 @@ export const SHOP_CONFIG = {
   powerSlots: {
     initial: 4,
     max: 8,
-    costs: [1000, 2500, 5000, 10000],  // cost for slot 5, 6, 7, 8
+    costs: [100, 250, 500, 1000],  // cost for slot 5, 6, 7, 8
   },
   passiveSlots: {
     initial: 2,
     max: 8,
-    costs: [1000, 2500, 5000, 10000, 25000, 50000],  // cost for slot 3, 4, 5, 6, 7, 8
+    costs: [100, 250, 500, 1000, 2500, 5000],  // cost for slot 3, 4, 5, 6, 7, 8
   },
   shopOfferSlots: {
     powers: 3,     // number of activePower + passivePower cards shown
     passives: 2,   // number of stat passive cards shown
   },
-  rerollCost: 100,
+  rerollCost: 10,
   questSlots: 2,   // placeholder for future quest system
 
   // Layout constants (720px wide portrait)

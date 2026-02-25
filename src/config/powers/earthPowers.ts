@@ -172,7 +172,7 @@ export const TREMOR_SENSE: PowerUpDefinition = {
   id: 'tremorSense',
   name: 'Tremor Sense',
   element: 'earth',
-  category: 'passivePower',
+  category: 'passive',
   maxLevel: 20,
   requires: 'earthquake',
   levels: tremorSenseLevels,

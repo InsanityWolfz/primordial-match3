@@ -56,6 +56,18 @@ export class Hazard {
     }
   }
 
+  /**
+   * Release the gem reference without destroying the hazard.
+   * Restores the gem's full alpha. Used before earthquake shuffle
+   * so that gems can be repositioned and re-associated afterward.
+   */
+  releaseGem(): void {
+    if (this.gem) {
+      this.gem.sprite.setAlpha(1);
+      this.gem = null;
+    }
+  }
+
   private getWorldPosition(): { x: number; y: number } {
     const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
     return {
@@ -280,11 +292,10 @@ export class Hazard {
   setGridPosition(row: number, col: number): void {
     this.gridRow = row;
     this.gridCol = col;
-    const pos = this.getWorldPosition();
-    this.overlay.setPosition(pos.x, pos.y);
-    if (this.hpText) {
-      this.hpText.setPosition(pos.x, pos.y);
-    }
+    // Visual position is updated separately via moveTo() during gravity animation.
+    // Do NOT reposition the overlay here — it would cause the overlay to teleport
+    // to the destination before the gem tween starts, making ice appear to move
+    // faster than the gem.
   }
 
   /**

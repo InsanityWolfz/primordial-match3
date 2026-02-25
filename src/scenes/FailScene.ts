@@ -103,8 +103,9 @@ export class FailScene extends Phaser.Scene {
       });
     });
 
-    // Inventory bar — shows what you had when you failed
-    const inventoryBar = new InventoryBar(this, this.runState.ownedPowerUps);
+    // Inventory bar — shows what you had when you failed (compact mode)
+    const failBarY = GAME_CONFIG.height - 160;
+    const inventoryBar = new InventoryBar(this, this.runState.ownedPowerUps, failBarY);
     inventoryBar.create();
   }
 }

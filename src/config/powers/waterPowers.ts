@@ -171,7 +171,7 @@ export const WELLSPRING: PowerUpDefinition = {
   id: 'wellspring',
   name: 'Wellspring',
   element: 'water',
-  category: 'passivePower',
+  category: 'passive',
   maxLevel: 20,
   requires: 'watergun',
   levels: wellspringLevels,
@@ -179,5 +179,6 @@ export const WELLSPRING: PowerUpDefinition = {
 };
 
 export const WATER_POWERS: PowerUpDefinition[] = [
-  WATER_GUN, SPLASH, WELLSPRING, PIRATE, CASCADE, MONSOON,
+  WATER_GUN, SPLASH, WELLSPRING, PIRATE, MONSOON,
+  // CASCADE removed from shop — cascade essence is now a built-in mechanic
 ];

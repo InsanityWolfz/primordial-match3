@@ -10,6 +10,7 @@ export class ShopScene extends Phaser.Scene {
   runState!: RunState;
   private cardRenderer!: ShopCardRenderer;
   private inventoryBar!: InventoryBar;
+  private essenceValueText!: Phaser.GameObjects.Text;
 
   // Current offering IDs
   private powerItemIds: string[] = [];    // activePower + passivePower offerings
@@ -20,8 +21,6 @@ export class ShopScene extends Phaser.Scene {
   private seenPassiveIds: Set<string> = new Set();
 
   // Managed game objects for cleanup
-  private headerObjects: Phaser.GameObjects.GameObject[] = [];
-  private essenceObjects: Phaser.GameObjects.GameObject[] = [];
   private powerSectionObjects: Phaser.GameObjects.GameObject[] = [];
   private passiveSectionObjects: Phaser.GameObjects.GameObject[] = [];
   private slotButtonObjects: Phaser.GameObjects.GameObject[] = [];
@@ -46,13 +45,16 @@ export class ShopScene extends Phaser.Scene {
     this.seenPassiveIds = new Set();
 
     this.drawBackground();
-    this.createHeader();
-    this.createEssenceDisplay();
+    this.drawHUDBar();
+    this.drawEssencePill();
     this.rollShopItems();
     this.drawAllSections();
 
-    // Inventory bar at bottom
-    this.inventoryBar = new InventoryBar(this, this.runState.ownedPowerUps);
+    // Inventory bar — same Y as GameScene (full-height bar)
+    const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
+    const gridBottom = GAME_CONFIG.gridOffsetY + GAME_CONFIG.gridRows * cellSize;
+    const barY = gridBottom + 8;
+    this.inventoryBar = new InventoryBar(this, this.runState.ownedPowerUps, barY);
     this.inventoryBar.create();
   }
 
@@ -77,7 +79,7 @@ export class ShopScene extends Phaser.Scene {
     slotsInfo: string,
     accentColor: number,
   ): number {
-    const headerH = 32;
+    const headerH = 28;
     const hexColor = '#' + accentColor.toString(16).padStart(6, '0');
 
     const strip = this.add.graphics();
@@ -118,39 +120,82 @@ export class ShopScene extends Phaser.Scene {
     return headerH;
   }
 
-  // ──────────────── HEADER ────────────────
+  // ──────────────── HUD BAR (mirrors GameScene) ────────────────
 
-  private createHeader(): void {
-    this.headerObjects.push(
-      this.add.text(GAME_CONFIG.width / 2, 80, `Round ${this.runState.round} Complete`, {
-        fontSize: '36px',
-        color: '#ffffff',
-        fontFamily: 'Arial',
-        fontStyle: 'bold',
-      }).setOrigin(0.5, 0.5),
-    );
+  private drawHUDBar(): void {
+    const hudBar = this.add.graphics();
+    hudBar.fillStyle(0x111122, 1);
+    hudBar.fillRect(0, 0, GAME_CONFIG.width, 80);
+    hudBar.lineStyle(1, 0x333355, 0.7);
+    hudBar.lineBetween(0, 80, GAME_CONFIG.width, 80);
+    hudBar.setDepth(10);
 
-    this.headerObjects.push(
-      this.add.text(GAME_CONFIG.width / 2, 130, `Score: ${this.runState.score}`, {
-        fontSize: '24px',
-        color: '#cccccc',
-        fontFamily: 'Arial',
-      }).setOrigin(0.5, 0.5),
-    );
+    // Full amber drain bar — indicates between-rounds phase
+    const drainBar = this.add.graphics();
+    drainBar.fillStyle(0x222233, 1);
+    drainBar.fillRect(0, 76, GAME_CONFIG.width, 4);
+    drainBar.fillStyle(0xffaa44, 0.85);
+    drainBar.fillRect(0, 76, GAME_CONFIG.width, 4);
+    drainBar.setDepth(11);
+
+    // ROUND section (left)
+    this.add.text(120, 12, 'ROUND', {
+      fontSize: '11px', color: '#6666aa', fontFamily: 'Arial', fontStyle: 'bold',
+    }).setOrigin(0.5, 0).setDepth(11);
+
+    this.add.text(120, 28, `${this.runState.round}`, {
+      fontSize: '32px', color: '#ffffff', fontFamily: 'Arial', fontStyle: 'bold',
+    }).setOrigin(0.5, 0).setDepth(11);
+
+    // SCORE section (center)
+    this.add.text(360, 12, 'SCORE', {
+      fontSize: '11px', color: '#6666aa', fontFamily: 'Arial', fontStyle: 'bold',
+    }).setOrigin(0.5, 0).setDepth(11);
+
+    this.add.text(360, 28, `${this.runState.score}`, {
+      fontSize: '32px', color: '#ffffff', fontFamily: 'Arial', fontStyle: 'bold',
+    }).setOrigin(0.5, 0).setDepth(11);
+
+    // PHASE section (right) — shows "SHOP" in amber
+    this.add.text(600, 12, 'PHASE', {
+      fontSize: '11px', color: '#6666aa', fontFamily: 'Arial', fontStyle: 'bold',
+    }).setOrigin(0.5, 0).setDepth(11);
+
+    this.add.text(600, 28, 'SHOP', {
+      fontSize: '28px', color: '#ffaa44', fontFamily: 'Arial', fontStyle: 'bold',
+    }).setOrigin(0.5, 0).setDepth(11);
   }
 
-  private createEssenceDisplay(): void {
-    this.destroyGroup(this.essenceObjects);
-    this.essenceObjects = [];
+  private drawEssencePill(): void {
+    const cx = GAME_CONFIG.width / 2;
+    const pillW = 200;
+    const pillH = 28;
+    const pillX = cx - pillW / 2;
+    const pillY = 88;
 
-    this.essenceObjects.push(
-      this.add.text(GAME_CONFIG.width / 2, 175, `Essence: ${this.runState.essence}`, {
-        fontSize: '24px',
-        color: '#cc88ff',
-        fontFamily: 'Arial',
-        fontStyle: 'bold',
-      }).setOrigin(0.5, 0.5),
-    );
+    const pill = this.add.graphics();
+    pill.fillStyle(0x1a1a33, 0.9);
+    pill.fillRoundedRect(pillX, pillY, pillW, pillH, 14);
+    pill.lineStyle(1, 0x4444aa, 0.8);
+    pill.strokeRoundedRect(pillX, pillY, pillW, pillH, 14);
+    pill.setDepth(10);
+
+    const iconX = pillX + 22;
+    const iconY = pillY + 14;
+    const ds = 6;
+    const diamond = this.add.graphics();
+    diamond.fillStyle(0x88aaff, 1);
+    diamond.fillTriangle(iconX, iconY - ds, iconX + ds, iconY, iconX, iconY + ds);
+    diamond.fillTriangle(iconX - ds, iconY, iconX, iconY - ds, iconX, iconY + ds);
+    diamond.setDepth(11);
+
+    this.add.text(iconX + 10, pillY + 14, 'ESSENCE', {
+      fontSize: '10px', color: '#8888cc', fontFamily: 'Arial', fontStyle: 'bold',
+    }).setOrigin(0, 0.5).setDepth(11);
+
+    this.essenceValueText = this.add.text(pillX + pillW - 12, pillY + 14, `${this.runState.essence}`, {
+      fontSize: '16px', color: '#aabbff', fontFamily: 'Arial', fontStyle: 'bold',
+    }).setOrigin(1, 0.5).setDepth(11);
   }
 
   // ──────────────── ROLLING ────────────────
@@ -217,23 +262,23 @@ export class ShopScene extends Phaser.Scene {
     const gap = SHOP_CONFIG.layout.cardGap;
     const startX = (GAME_CONFIG.width - cardW) / 2;
 
-    let curY = 220;
+    let curY = 120;
 
     // ─── Power section ───
     const powerSectionHeight = this.drawPowerSection(startX, curY, cardW, gap);
-    curY += 12 + powerSectionHeight;
+    curY += 8 + powerSectionHeight;
 
     // ─── Passive section ───
     const passiveSectionHeight = this.drawPassiveSection(startX, curY, cardW, gap);
-    curY += 12 + passiveSectionHeight;
+    curY += 8 + passiveSectionHeight;
 
     // ─── Slot buttons ───
     this.drawSlotButtons(curY);
-    curY += 55;
+    curY += 44;
 
     // ─── Reroll button ───
     this.drawRerollButton(curY);
-    curY += 50;
+    curY += 44;
 
     // ─── Next round button ───
     this.drawNextRoundButton(curY);
@@ -502,35 +547,37 @@ export class ShopScene extends Phaser.Scene {
 
     const btnX = GAME_CONFIG.width / 2;
     const btnW = 280;
-    const btnH = 54;
+    const btnH = 48;
 
     const bg = this.add.graphics();
     bg.fillStyle(0x338833, 1);
-    bg.fillRoundedRect(btnX - btnW / 2, y, btnW, btnH, 12);
+    bg.fillRoundedRect(btnX - btnW / 2, y, btnW, btnH, 10);
+    bg.setDepth(70);
     this.nextRoundObjects.push(bg);
 
-    const label = this.add.text(btnX, y + btnH / 2, 'Next Round', {
-      fontSize: '26px',
+    const label = this.add.text(btnX, y + btnH / 2, 'Next Round  ▶', {
+      fontSize: '22px',
       color: '#ffffff',
       fontFamily: 'Arial',
       fontStyle: 'bold',
-    }).setOrigin(0.5, 0.5);
+    }).setOrigin(0.5, 0.5).setDepth(71);
     this.nextRoundObjects.push(label);
 
     const hitArea = this.add.zone(btnX, y + btnH / 2, btnW, btnH);
     hitArea.setInteractive({ useHandCursor: true });
+    hitArea.setDepth(72);
     this.nextRoundObjects.push(hitArea);
 
     hitArea.on('pointerover', () => {
       bg.clear();
       bg.fillStyle(0x44aa44, 1);
-      bg.fillRoundedRect(btnX - btnW / 2, y, btnW, btnH, 12);
+      bg.fillRoundedRect(btnX - btnW / 2, y, btnW, btnH, 10);
     });
 
     hitArea.on('pointerout', () => {
       bg.clear();
       bg.fillStyle(0x338833, 1);
-      bg.fillRoundedRect(btnX - btnW / 2, y, btnW, btnH, 12);
+      bg.fillRoundedRect(btnX - btnW / 2, y, btnW, btnH, 10);
     });
 
     hitArea.on('pointerdown', () => this.startNextRound());
@@ -624,7 +671,7 @@ export class ShopScene extends Phaser.Scene {
   // ──────────────── REFRESH ────────────────
 
   private refreshShop(): void {
-    this.createEssenceDisplay();
+    this.essenceValueText.setText(`${this.runState.essence}`);
     this.destroyGroup(this.powerSectionObjects);
     this.destroyGroup(this.passiveSectionObjects);
     this.destroyGroup(this.slotButtonObjects);
@@ -644,15 +691,11 @@ export class ShopScene extends Phaser.Scene {
   // ──────────────── HELPERS ────────────────
 
   private clearAllGroups(): void {
-    this.destroyGroup(this.headerObjects);
-    this.destroyGroup(this.essenceObjects);
     this.destroyGroup(this.powerSectionObjects);
     this.destroyGroup(this.passiveSectionObjects);
     this.destroyGroup(this.slotButtonObjects);
     this.destroyGroup(this.rerollObjects);
     this.destroyGroup(this.nextRoundObjects);
-    this.headerObjects = [];
-    this.essenceObjects = [];
     this.powerSectionObjects = [];
     this.passiveSectionObjects = [];
     this.slotButtonObjects = [];

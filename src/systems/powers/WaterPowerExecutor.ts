@@ -96,9 +96,9 @@ export class WaterPowerExecutor {
    * Splash: passive power that triggers after every match.
    * Hits random gems for damage.
    */
-  async executeSplashPassive(): Promise<void> {
+  async executeSplashPassive(): Promise<boolean> {
     const splashOwned = this.ctx.ownedPowerUps.find(p => p.powerUpId === 'splash');
-    if (!splashOwned) return;
+    if (!splashOwned) return false;
 
     const params = this.getParams('splash', splashOwned.level);
     const count = params.targetCount ?? 1;
@@ -118,7 +118,7 @@ export class WaterPowerExecutor {
     }
 
     const targets = available.slice(0, Math.min(count, available.length));
-    if (targets.length === 0) return;
+    if (targets.length === 0) return false;
 
     // Water splash visual
     const scene = this.ctx.phaserScene;
@@ -142,5 +142,6 @@ export class WaterPowerExecutor {
 
     this.ctx.score += result.destroyed.length * GAME_CONFIG.scorePerGem;
     this.ctx.updateScoreDisplay();
+    return true;
   }
 }

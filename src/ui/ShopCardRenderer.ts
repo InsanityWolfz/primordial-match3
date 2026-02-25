@@ -32,8 +32,8 @@ export class ShopCardRenderer {
     const descH = temp.height;
     temp.destroy();
 
-    // top pad(10) + name(20) + level(18) + gap(4) + desc + gap(8) + pill(26) + bottom pad(10)
-    return 10 + 20 + 18 + 4 + descH + 8 + 26 + 10;
+    // top pad(8) + name(18) + level(18) + gap(4) + desc + gap(6) + pill(24) + bottom pad(8)
+    return 8 + 18 + 18 + 4 + descH + 6 + 24 + 8;
   }
 
   /**
@@ -82,10 +82,10 @@ export class ShopCardRenderer {
     bg.strokeRoundedRect(x, y, w, h, 8);
     objects.push(bg);
 
-    // Two-tone header band (top 48px, slightly lighter)
+    // Two-tone header band (top 40px, slightly lighter)
     const headerBand = this.scene.add.graphics();
     headerBand.fillStyle(elementColor, affordable ? 0.1 : 0.03);
-    headerBand.fillRoundedRect(x, y, w, 48, { tl: 8, tr: 8, bl: 0, br: 0 });
+    headerBand.fillRoundedRect(x, y, w, 40, { tl: 8, tr: 8, bl: 0, br: 0 });
     objects.push(headerBand);
 
     // Left accent bar (4px wide, element color, rounded on left only)
@@ -95,8 +95,8 @@ export class ShopCardRenderer {
     objects.push(accent);
 
     // Name (row 1) — shifted right to clear accent bar
-    objects.push(this.scene.add.text(x + 16, y + 10, def.name, {
-      fontSize: '16px',
+    objects.push(this.scene.add.text(x + 16, y + 8, def.name, {
+      fontSize: '14px',
       color: affordable ? '#ffffff' : '#666666',
       fontFamily: 'Arial',
       fontStyle: 'bold',
@@ -112,8 +112,8 @@ export class ShopCardRenderer {
     const typeColor = def.category === 'passive' ? '#66aaff'
       : def.category === 'passivePower' ? '#88ccff'
       : '#ffaa44';
-    objects.push(this.scene.add.text(x + w - 10, y + 10, categoryLabel, {
-      fontSize: '11px',
+    objects.push(this.scene.add.text(x + w - 10, y + 8, categoryLabel, {
+      fontSize: '10px',
       color: affordable ? typeColor : '#555555',
       fontFamily: 'Arial',
     }).setOrigin(1, 0));
@@ -131,8 +131,8 @@ export class ShopCardRenderer {
       levelText = `Lv ${currentLevel} / ${def.maxLevel}`;
       levelColor = '#aaaaaa';
     }
-    objects.push(this.scene.add.text(x + 16, y + 32, levelText, {
-      fontSize: '12px',
+    objects.push(this.scene.add.text(x + 16, y + 26, levelText, {
+      fontSize: '11px',
       color: affordable ? levelColor : '#555555',
       fontFamily: 'Arial',
     }));
@@ -141,8 +141,8 @@ export class ShopCardRenderer {
     if (def.category === 'activePower') {
       const nextLevelDef = def.levels[currentLevel] ?? def.levels[def.maxLevel - 1];
       if (nextLevelDef.charges) {
-        objects.push(this.scene.add.text(x + w - 10, y + 32, `${nextLevelDef.charges} charges/round`, {
-          fontSize: '11px',
+        objects.push(this.scene.add.text(x + w - 10, y + 26, `${nextLevelDef.charges} charges/round`, {
+          fontSize: '10px',
           color: affordable ? '#888888' : '#444444',
           fontFamily: 'Arial',
         }).setOrigin(1, 0));
@@ -152,7 +152,7 @@ export class ShopCardRenderer {
     // Description (row 3, word-wrapped)
     const descIndex = isMaxLevel ? currentLevel - 1 : currentLevel;
     const descText = def.levels[descIndex]?.description ?? '';
-    objects.push(this.scene.add.text(x + 10, y + 52, descText, {
+    objects.push(this.scene.add.text(x + 10, y + 44, descText, {
       fontSize: '11px',
       color: affordable ? '#aaaaaa' : '#555555',
       fontFamily: 'Arial',
@@ -160,10 +160,10 @@ export class ShopCardRenderer {
     }));
 
     // Buy / state pill button (anchored to bottom of card)
-    const pillH = 26;
+    const pillH = 24;
     const pillW = w - 20;
     const pillX = x + 10;
-    const pillBY = y + h - pillH - 8;
+    const pillBY = y + h - pillH - 6;
 
     let pillFill: number;
     let pillBorderColor: number;

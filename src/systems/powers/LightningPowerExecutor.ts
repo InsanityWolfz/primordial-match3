@@ -158,32 +158,55 @@ export class LightningPowerExecutor {
 
   /**
    * Capacitor: passive power that triggers after match.
-   * Chains random gems for bonus damage.
+   * Chains gems adjacent to the matched gems (BFS outward), not random ones.
    */
-  async executeCapacitorPassive(): Promise<void> {
+  async executeCapacitorPassive(matchPositions: { row: number; col: number }[] = []): Promise<boolean> {
     const capacitorOwned = this.ctx.ownedPowerUps.find(p => p.powerUpId === 'capacitor');
-    if (!capacitorOwned) return;
+    if (!capacitorOwned) return false;
 
     const params = this.getParams('capacitor', capacitorOwned.level);
     const chainCount = params.chainCount ?? 1;
     const damage = params.damage ?? 1;
 
-    // Pick random gems to chain
-    const available: { row: number; col: number }[] = [];
-    for (let r = 0; r < this.ctx.grid.rows; r++) {
-      for (let c = 0; c < this.ctx.grid.cols; c++) {
-        if (this.ctx.grid.getGem(r, c)) available.push({ row: r, col: c });
+    // BFS outward from match positions to find the nearest non-matched gems
+    const matchSet = new Set(matchPositions.map(p => `${p.row},${p.col}`));
+    const targets: { row: number; col: number }[] = [];
+    const visited = new Set<string>(matchSet);
+    let frontier = matchPositions.length > 0 ? [...matchPositions] : [];
+    const dirs: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+    while (targets.length < chainCount && frontier.length > 0) {
+      const nextFrontier: { row: number; col: number }[] = [];
+      for (const pos of frontier) {
+        for (const [dr, dc] of dirs) {
+          const nr = pos.row + dr;
+          const nc = pos.col + dc;
+          const key = `${nr},${nc}`;
+          if (!visited.has(key) && this.ctx.grid.isValidPosition(nr, nc) && this.ctx.grid.getGem(nr, nc)) {
+            visited.add(key);
+            targets.push({ row: nr, col: nc });
+            nextFrontier.push({ row: nr, col: nc });
+          }
+        }
+      }
+      frontier = nextFrontier;
+    }
+
+    // If no adjacent targets found (e.g. no match positions), fall back to random gems
+    if (targets.length === 0) {
+      for (let r = 0; r < this.ctx.grid.rows; r++) {
+        for (let c = 0; c < this.ctx.grid.cols; c++) {
+          if (this.ctx.grid.getGem(r, c)) targets.push({ row: r, col: c });
+        }
+      }
+      for (let i = targets.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [targets[i], targets[j]] = [targets[j], targets[i]];
       }
     }
 
-    // Shuffle and pick
-    for (let i = available.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [available[i], available[j]] = [available[j], available[i]];
-    }
-
-    const targets = available.slice(0, Math.min(chainCount, available.length));
-    if (targets.length === 0) return;
+    const limitedTargets = targets.slice(0, Math.min(chainCount, targets.length));
+    if (limitedTargets.length === 0) return false;
 
     // Small lightning visual
     const scene = this.ctx.phaserScene;
@@ -192,9 +215,9 @@ export class LightningPowerExecutor {
     lightning.lineStyle(2, lightningColor, 0.6);
     const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
 
-    for (let i = 1; i < targets.length; i++) {
-      const prev = targets[i - 1];
-      const curr = targets[i];
+    for (let i = 1; i < limitedTargets.length; i++) {
+      const prev = limitedTargets[i - 1];
+      const curr = limitedTargets[i];
       const x1 = GAME_CONFIG.gridOffsetX + prev.col * cellSize + GAME_CONFIG.gemSize / 2;
       const y1 = GAME_CONFIG.gridOffsetY + prev.row * cellSize + GAME_CONFIG.gemSize / 2;
       const x2 = GAME_CONFIG.gridOffsetX + curr.col * cellSize + GAME_CONFIG.gemSize / 2;
@@ -208,9 +231,10 @@ export class LightningPowerExecutor {
       onComplete: () => lightning.destroy(),
     });
 
-    const result = await this.damageSystem.dealDamageSequential(targets, damage, 'lightning', 30, 2);
+    const result = await this.damageSystem.dealDamageSequential(limitedTargets, damage, 'lightning', 30, 2);
 
     this.ctx.score += result.destroyed.length * GAME_CONFIG.scorePerGem;
     this.ctx.updateScoreDisplay();
+    return true;
   }
 }

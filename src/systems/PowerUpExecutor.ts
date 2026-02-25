@@ -20,6 +20,7 @@ export class PowerUpExecutor {
   private cancelTargeting: () => void;
   private endRound: () => Promise<void>;
   private onActionComplete: () => void;
+  private onFlashCard: (id: string) => void;
 
   // Element executors (initialized via setDamageSystem)
   private fireExecutor!: FirePowerExecutor;
@@ -37,6 +38,7 @@ export class PowerUpExecutor {
       cancelTargeting: () => void;
       endRound: () => Promise<void>;
       onActionComplete: () => void;
+      onFlashCard: (id: string) => void;
     },
   ) {
     this.ctx = ctx;
@@ -44,6 +46,7 @@ export class PowerUpExecutor {
     this.cancelTargeting = callbacks.cancelTargeting;
     this.endRound = callbacks.endRound;
     this.onActionComplete = callbacks.onActionComplete;
+    this.onFlashCard = callbacks.onFlashCard;
   }
 
   /**
@@ -74,6 +77,8 @@ export class PowerUpExecutor {
     }
 
     owned.charges--;
+    this.updateHudCharges(); // show charge removal immediately
+    this.onFlashCard(id);
     this.cancelTargeting();
 
     switch (id) {
@@ -87,8 +92,6 @@ export class PowerUpExecutor {
         await this.waterExecutor.executeWaterGun(owned.level);
         break;
     }
-
-    this.updateHudCharges();
     this.onActionComplete();
     this.ctx.isSwapping = false;
 
@@ -118,8 +121,12 @@ export class PowerUpExecutor {
         return;
       }
       owned.charges--;
+      this.updateHudCharges(); // show charge removal immediately
+      this.onFlashCard(id);
     } else {
       owned.charges--;
+      this.updateHudCharges(); // show charge removal immediately
+      this.onFlashCard(id);
       switch (id) {
         case 'fireball':
           await this.fireExecutor.executeFireball(owned.level, row, col);
@@ -129,8 +136,6 @@ export class PowerUpExecutor {
           break;
       }
     }
-
-    this.updateHudCharges();
     this.onActionComplete();
     this.ctx.isSwapping = false;
 
@@ -144,23 +149,24 @@ export class PowerUpExecutor {
   /**
    * Called after every match cascade step.
    * Triggers all passive powers that fire on match.
+   * matchPositions: the gems that were just matched (used by Capacitor for adjacent targeting).
    */
-  async executePostMatchPassives(): Promise<void> {
+  async executePostMatchPassives(matchPositions: { row: number; col: number }[] = []): Promise<void> {
     // Splash (water passive power)
-    await this.waterExecutor.executeSplashPassive();
+    if (await this.waterExecutor.executeSplashPassive()) this.onFlashCard('splash');
 
-    // Windslash (air passive power) — chance-based
-    await this.airExecutor.executeWindslashPassive();
+    // Windslash (air passive power) — chance-based, only flashes when it triggers
+    if (await this.airExecutor.executeWindslashPassive()) this.onFlashCard('windslash');
 
-    // Capacitor (lightning passive power)
-    await this.lightningExecutor.executeCapacitorPassive();
+    // Capacitor (lightning passive power) — chains adjacent to matched gems
+    if (await this.lightningExecutor.executeCapacitorPassive(matchPositions)) this.onFlashCard('capacitor');
   }
 
   /**
    * Legacy method for backward compat with CascadeSystem.
    * Now delegates to executePostMatchPassives.
    */
-  async executeSplashPassive(): Promise<void> {
-    await this.executePostMatchPassives();
+  async executeSplashPassive(matchPositions: { row: number; col: number }[] = []): Promise<void> {
+    await this.executePostMatchPassives(matchPositions);
   }
 }

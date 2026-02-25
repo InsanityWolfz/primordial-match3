@@ -6,11 +6,11 @@ import type { PassiveManager } from './PassiveManager.ts';
 
 export class CascadeSystem {
   private ctx: GameContext;
-  private executePostMatchPassives: () => Promise<void>;
+  private executePostMatchPassives: (matchPositions: { row: number; col: number }[]) => Promise<void>;
   private damageSystem!: DamageSystem;
   private passiveManager!: PassiveManager;
 
-  constructor(ctx: GameContext, executePostMatchPassives: () => Promise<void>) {
+  constructor(ctx: GameContext, executePostMatchPassives: (matchPositions: { row: number; col: number }[]) => Promise<void>) {
     this.ctx = ctx;
     this.executePostMatchPassives = executePostMatchPassives;
   }
@@ -28,21 +28,27 @@ export class CascadeSystem {
     const multiplier = Math.pow(GAME_CONFIG.cascadeMultiplier, cascadeLevel - 1);
     const points = Math.round(matches.length * GAME_CONFIG.scorePerGem * multiplier);
 
-    // Passive: match completed bonuses (Wild Growth) + Cascade essence bonus
+    // Built-in cascade essence: each wave always gives cascadeLevel essence
+    // (so wave 1 = 1 essence, wave 2 = 2, wave 3 = 3, etc.)
+    const builtInCascadeEssence = cascadeLevel;
+
+    // Passive: match completed bonuses (Wild Growth) + any remaining CASCADE passive bonus
+    let passiveEssence = 0;
     if (this.passiveManager) {
       // Determine element from the first gem in the match (all same element)
       const matchElement = matches.length > 0
         ? (this.ctx.grid.getGem(matches[0].row, matches[0].col)?.type.name ?? '')
         : '';
       const matchResult = this.passiveManager.onMatchCompleted(matchElement, matches.length);
-      // Cascade passive: bonus essence scales with cascade depth
+      // CASCADE passive is removed from shop but kept for backward compat
       const cascadeEssencePerLevel = this.passiveManager.getCascadeEssenceBonus();
-      const cascadeEssence = cascadeEssencePerLevel * cascadeLevel;
-      const totalBonusEssence = matchResult.bonusEssence + cascadeEssence;
-      if (totalBonusEssence > 0) {
-        this.ctx.essence += totalBonusEssence;
-        this.ctx.updateEssenceDisplay();
-      }
+      passiveEssence = matchResult.bonusEssence + cascadeEssencePerLevel * cascadeLevel;
+    }
+
+    const totalBonusEssence = builtInCascadeEssence + passiveEssence;
+    if (totalBonusEssence > 0) {
+      this.ctx.essence += totalBonusEssence;
+      this.ctx.updateEssenceDisplay();
     }
 
     this.ctx.score += points;
@@ -62,7 +68,8 @@ export class CascadeSystem {
     }
 
     // Post-match passive powers (Splash, Windslash, Capacitor)
-    await this.executePostMatchPassives();
+    // Pass match positions so Capacitor can chain to adjacent gems
+    await this.executePostMatchPassives(matches);
 
     await this.applyGravityAndSpawn();
 

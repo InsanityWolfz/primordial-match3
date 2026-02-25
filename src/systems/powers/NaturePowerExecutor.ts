@@ -205,26 +205,34 @@ export class NaturePowerExecutor {
       const oldGem = this.ctx.grid.getGem(row, col);
       if (!oldGem) { resolve(); return; }
 
+      // Capture display scale set by setDisplaySize in createSprite
+      const oldScaleX = oldGem.sprite.scaleX;
+      const oldScaleY = oldGem.sprite.scaleY;
+
       scene.tweens.add({
         targets: oldGem.sprite,
         alpha: 0,
-        scaleX: 0.5,
-        scaleY: 0.5,
+        scaleX: oldScaleX * 0.5,
+        scaleY: oldScaleY * 0.5,
         duration: 150,
         onComplete: () => {
           oldGem.destroy();
 
           const newGem = new Gem(scene, row, col, newType, GAME_CONFIG.gemSize);
+          // Capture correct display scale after setDisplaySize (inside createSprite)
+          const targetScaleX = newGem.sprite.scaleX;
+          const targetScaleY = newGem.sprite.scaleY;
           newGem.sprite.setAlpha(0);
-          newGem.sprite.setScale(0.5);
+          // Start at half the correct display size, not absolute scale 0.5
+          newGem.sprite.setScale(targetScaleX * 0.5, targetScaleY * 0.5);
           this.ctx.grid.setGem(row, col, newGem);
           newGem.sprite.on('pointerdown', () => this.ctx.onGemClick(newGem));
 
           scene.tweens.add({
             targets: newGem.sprite,
             alpha: 1,
-            scaleX: 1,
-            scaleY: 1,
+            scaleX: targetScaleX,
+            scaleY: targetScaleY,
             duration: 200,
             onComplete: () => resolve(),
           });
