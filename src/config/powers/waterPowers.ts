@@ -165,6 +165,8 @@ const wellspringLevels = generatePower20Levels(
     'Matching 3 water gems: 40% chance to refund 1 Water Gun charge',
     'Matching 3 water gems: 50% chance to refund 1 Water Gun charge',
   ],
+  undefined, undefined,
+  (p) => `Matching 3 water gems: ${p.triggerChance}% chance to refund 1 Water Gun charge`,
 );
 
 export const WELLSPRING: PowerUpDefinition = {

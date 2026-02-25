@@ -1,3 +1,4 @@
+import type Phaser from 'phaser';
 import { GAME_CONFIG } from '../config/gameConfig.ts';
 import { Gem } from '../entities/Gem.ts';
 import type { GameContext } from '../types/GameContext.ts';
@@ -111,7 +112,7 @@ export class CascadeSystem {
         gem.sprite.setPosition(gem.sprite.x, spawnY);
 
         this.ctx.grid.setGem(row, col, gem);
-        gem.sprite.on('pointerdown', () => this.ctx.onGemClick(gem));
+        gem.sprite.on('pointerdown', (pointer: Phaser.Input.Pointer) => this.ctx.onGemPointerDown(gem, pointer));
 
         const targetPos = gem.getWorldPosition();
         fallPromises.push(gem.moveTo(targetPos.x, targetPos.y, GAME_CONFIG.fallDuration));

@@ -99,13 +99,14 @@ function formatParamsAsDescription(params: Record<string, number>, charges?: num
  * Generate 20-level power data with linear interpolation between milestones.
  * Milestones define param values at levels 1, 5, 10, 15, 20.
  * Between milestones, values interpolate linearly.
- * Non-milestone levels get auto-generated descriptions from their interpolated params.
+ * Non-milestone levels use nonMilestoneDescFn if provided, else auto-generated from params.
  */
 export function generatePower20Levels(
   milestoneParams: Record<string, number>[],  // 5 entries for levels 1,5,10,15,20
   milestoneDescriptions: string[],            // 5 entries for milestone descriptions
   milestoneCharges?: number[],                // 5 entries for charges (active only)
   costArray: number[] = POWER_COSTS_20,
+  nonMilestoneDescFn?: (params: Record<string, number>, charges?: number) => string,
 ): PowerUpLevelData[] {
   const milestoneLevels = [1, 5, 10, 15, 20];
   const levels: PowerUpLevelData[] = [];
@@ -140,11 +141,13 @@ export function generatePower20Levels(
       charges = Math.round(startC + (endC - startC) * t);
     }
 
-    // Milestone levels use explicit descriptions; others are auto-generated from params
+    // Milestone levels use explicit descriptions; others use custom fn or auto-generated
     const descIdx = milestoneLevels.indexOf(lvl);
     const description = descIdx >= 0
       ? milestoneDescriptions[descIdx]
-      : formatParamsAsDescription(params, charges);
+      : nonMilestoneDescFn
+        ? nonMilestoneDescFn(params, charges)
+        : formatParamsAsDescription(params, charges);
 
     levels.push({
       level: lvl,

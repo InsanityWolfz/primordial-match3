@@ -166,6 +166,8 @@ const tremorSenseLevels = generatePower20Levels(
     'Matching 3 earth gems: 40% chance to refund 1 Earthquake charge',
     'Matching 3 earth gems: 50% chance to refund 1 Earthquake charge',
   ],
+  undefined, undefined,
+  (p) => `Matching 3 earth gems: ${p.triggerChance}% chance to refund 1 Earthquake charge`,
 );
 
 export const TREMOR_SENSE: PowerUpDefinition = {

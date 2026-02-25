@@ -26,6 +26,7 @@ export interface GameContext {
   // Gem helpers
   getRandomGemType(): GemType;
   onGemClick(gem: Gem): void;
+  onGemPointerDown(gem: Gem, pointer: Phaser.Input.Pointer): void;
 
   // Grid queries (hazard-aware)
   findMatches(): { row: number; col: number }[];

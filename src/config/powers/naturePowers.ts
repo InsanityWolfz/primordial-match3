@@ -108,6 +108,8 @@ const overgrowthLevels = generatePower20Levels(
     'Matching 3 nature gems: 40% chance to refund 1 Transmute charge',
     'Matching 3 nature gems: 50% chance to refund 1 Transmute charge',
   ],
+  undefined, undefined,
+  (p) => `Matching 3 nature gems: ${p.triggerChance}% chance to refund 1 Transmute charge`,
 );
 
 export const OVERGROWTH: PowerUpDefinition = {

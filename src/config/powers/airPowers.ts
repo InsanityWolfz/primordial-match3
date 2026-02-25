@@ -50,6 +50,8 @@ const windslashLevels = generatePower20Levels(
     'After match: 40% chance to hit all gems in 1 random column, 15 damage',
     'After match: 50% chance to hit all gems in 1 random column, 20 damage',
   ],
+  undefined, undefined,
+  (p) => `After match: ${p.triggerChance}% chance to hit all gems in 1 random column, ${p.damage} damage`,
 );
 
 export const WINDSLASH: PowerUpDefinition = {
@@ -165,6 +167,8 @@ const updraftLevels = generatePower20Levels(
     'Matching 3 air gems: 40% chance to refund 1 Gust charge',
     'Matching 3 air gems: 50% chance to refund 1 Gust charge',
   ],
+  undefined, undefined,
+  (p) => `Matching 3 air gems: ${p.triggerChance}% chance to refund 1 Gust charge`,
 );
 
 export const UPDRAFT: PowerUpDefinition = {

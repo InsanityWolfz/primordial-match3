@@ -51,6 +51,11 @@ const combustionLevels = generatePower20Levels(
     'On hazard destroy: 9 area explosions (3x3), 15 damage each',
     'On hazard destroy: 9 area explosions (3x3), 20 damage each',
   ],
+  undefined, undefined,
+  (p) => {
+    const areaStr = p.explosionRadius > 0 ? ` (${p.explosionRadius * 2 + 1}x${p.explosionRadius * 2 + 1})` : ' nearby';
+    return `On hazard destroy: ${p.explosionCount} explosions${areaStr}, ${p.damage} damage each`;
+  },
 );
 
 export const COMBUSTION: PowerUpDefinition = {
@@ -138,6 +143,8 @@ const kindlingLevels = generatePower20Levels(
     'Matching 3 fire gems: 40% chance to refund 1 Fireball charge',
     'Matching 3 fire gems: 50% chance to refund 1 Fireball charge',
   ],
+  undefined, undefined,
+  (p) => `Matching 3 fire gems: ${p.triggerChance}% chance to refund 1 Fireball charge`,
 );
 
 export const KINDLING: PowerUpDefinition = {

@@ -58,6 +58,12 @@ export class GameScene extends Phaser.Scene implements GameContext {
   private roundGemCount = 0;
   private roundMatchThreeCount = 0;
 
+  // Drag-to-swap state
+  private dragStartGem: import('../entities/Gem.ts').Gem | null = null;
+  private dragStartX = 0;
+  private dragStartY = 0;
+  private static readonly DRAG_THRESHOLD = 20;
+
   // Debug
   private debugGraphics: Phaser.GameObjects.Graphics | null = null;
   private debugVisible = false;
@@ -75,6 +81,7 @@ export class GameScene extends Phaser.Scene implements GameContext {
     this.renderGrid();
     this.createDebugButtons();
     this.setupDebugKeys();
+    this.setupDragInput();
     this.cascadeSystem.clearInitialMatches().then(() => {
       // Place hazards after initial matches are cleared
       this.hazardManager.placeHazards(this.round);
@@ -597,7 +604,7 @@ export class GameScene extends Phaser.Scene implements GameContext {
         const gemType = this.getRandomGemType();
         const gem = new Gem(this, row, col, gemType, GAME_CONFIG.gemSize);
         this.grid.setGem(row, col, gem);
-        gem.sprite.on('pointerdown', () => this.onGemClick(gem));
+        gem.sprite.on('pointerdown', (pointer: Phaser.Input.Pointer) => this.onGemPointerDown(gem, pointer));
       }
     }
   }
@@ -606,17 +613,6 @@ export class GameScene extends Phaser.Scene implements GameContext {
 
   onGemClick(gem: Gem): void {
     if (this.isSwapping) return;
-
-    // Power-up targeting mode
-    const activePowerUpId = this.hudManager.getActivePowerUpId();
-    if (activePowerUpId) {
-      const def = getPowerUpDef(activePowerUpId);
-      if (def?.needsTarget) {
-        this.powerUpExecutor.executeTargetedPowerUp(activePowerUpId, gem.gridRow, gem.gridCol);
-        return;
-      }
-    }
-
     if (this.turnsRemaining <= 0) return;
 
     if (!this.selectedGem) {
@@ -734,6 +730,87 @@ export class GameScene extends Phaser.Scene implements GameContext {
     } else {
       // Failure — hazards remain
       this.scene.start('FailScene', runState);
+    }
+  }
+
+  // ──────────────── DRAG INPUT ────────────────
+
+  setupDragInput(): void {
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => this.onScenePointerMove(pointer));
+    this.input.on('pointerup',   (pointer: Phaser.Input.Pointer) => this.onScenePointerUp(pointer));
+  }
+
+  /** Called on pointerdown on any gem sprite. Handles power-up targeting immediately;
+   *  otherwise records the drag start position for drag/tap detection. */
+  onGemPointerDown(gem: import('../entities/Gem.ts').Gem, pointer: Phaser.Input.Pointer): void {
+    if (this.isSwapping) return;
+
+    // Power-up targeting: fire immediately on press
+    const activePowerUpId = this.hudManager.getActivePowerUpId();
+    if (activePowerUpId) {
+      const def = getPowerUpDef(activePowerUpId);
+      if (def?.needsTarget) {
+        this.powerUpExecutor.executeTargetedPowerUp(activePowerUpId, gem.gridRow, gem.gridCol);
+        return;
+      }
+    }
+
+    // Record drag start — resolved as drag or tap on pointermove/pointerup
+    this.dragStartGem = gem;
+    this.dragStartX = pointer.x;
+    this.dragStartY = pointer.y;
+  }
+
+  /** Scene-level pointermove: if the pointer has dragged far enough, execute a directional swap. */
+  onScenePointerMove(pointer: Phaser.Input.Pointer): void {
+    if (!this.dragStartGem || this.isSwapping || this.turnsRemaining <= 0) return;
+
+    const dx = pointer.x - this.dragStartX;
+    const dy = pointer.y - this.dragStartY;
+    if (Math.sqrt(dx * dx + dy * dy) < GameScene.DRAG_THRESHOLD) return;
+
+    const gem = this.dragStartGem;
+    this.dragStartGem = null; // consume to prevent re-entry
+
+    // Determine drag direction
+    let targetRow = gem.gridRow;
+    let targetCol = gem.gridCol;
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      targetCol += dx > 0 ? 1 : -1;
+    } else {
+      targetRow += dy > 0 ? 1 : -1;
+    }
+
+    // Bounds check
+    if (targetRow < 0 || targetRow >= this.grid.rows || targetCol < 0 || targetCol >= this.grid.cols) return;
+    const targetGem = this.grid.getGem(targetRow, targetCol);
+    if (!targetGem) return;
+
+    // Hazard check — hazarded gems can't be moved
+    if (
+      this.hazardManager.hasHazard(gem.gridRow, gem.gridCol) ||
+      this.hazardManager.hasHazard(targetRow, targetCol)
+    ) return;
+
+    // Clear any pending tap-selection
+    if (this.selectedGem) {
+      this.selectedGem.deselect();
+      this.selectedGem = null;
+    }
+
+    this.handleSwap(gem, targetGem);
+  }
+
+  /** Scene-level pointerup: if movement was small it was a tap — route to onGemClick. */
+  onScenePointerUp(pointer: Phaser.Input.Pointer): void {
+    if (!this.dragStartGem) return;
+    const gem = this.dragStartGem;
+    this.dragStartGem = null;
+
+    const dx = pointer.x - this.dragStartX;
+    const dy = pointer.y - this.dragStartY;
+    if (Math.sqrt(dx * dx + dy * dy) < GameScene.DRAG_THRESHOLD) {
+      this.onGemClick(gem);
     }
   }
 

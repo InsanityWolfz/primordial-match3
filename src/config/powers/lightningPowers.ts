@@ -51,6 +51,8 @@ const capacitorLevels = generatePower20Levels(
     'After match: zap 10 random gems, 15 damage',
     'After match: zap 15 random gems, 20 damage',
   ],
+  undefined, undefined,
+  (p) => `After match: zap ${p.chainCount} random gem${p.chainCount !== 1 ? 's' : ''}, ${p.damage} damage`,
 );
 
 export const CAPACITOR: PowerUpDefinition = {
@@ -138,6 +140,8 @@ const chargeUpLevels = generatePower20Levels(
     'Matching 3 lightning gems: 40% chance to refund 1 Lightning charge',
     'Matching 3 lightning gems: 50% chance to refund 1 Lightning charge',
   ],
+  undefined, undefined,
+  (p) => `Matching 3 lightning gems: ${p.triggerChance}% chance to refund 1 Lightning charge`,
 );
 
 export const CHARGE_UP: PowerUpDefinition = {
