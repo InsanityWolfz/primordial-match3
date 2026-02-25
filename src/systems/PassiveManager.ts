@@ -17,6 +17,7 @@ import { getPowerUpDef } from '../config/powerUps.ts';
 export class PassiveManager {
   private ctx: GameContext;
   private damageSystem!: DamageSystem;
+  private onFlashCard: ((id: string) => void) | null = null;
 
   constructor(ctx: GameContext) {
     this.ctx = ctx;
@@ -24,6 +25,11 @@ export class PassiveManager {
 
   setDamageSystem(damageSystem: DamageSystem): void {
     this.damageSystem = damageSystem;
+  }
+
+  /** Wire up the inventory flash callback so passives can highlight their card when they fire. */
+  setFlashCardCallback(cb: (id: string) => void): void {
+    this.onFlashCard = cb;
   }
 
   // ──────────────── HELPERS ────────────────
@@ -62,6 +68,7 @@ export class PassiveManager {
       const params = this.getPassiveParams(passiveId);
       if (params && params.bonusEssence) {
         result.bonusEssence += params.bonusEssence;
+        this.onFlashCard?.(passiveId);
       }
     }
 
@@ -98,6 +105,7 @@ export class PassiveManager {
         if (params && params.refundChance) {
           if (Math.random() * 100 < params.refundChance) {
             refundCharge = true;
+            this.onFlashCard?.(refundId);
           }
         }
       }
@@ -119,6 +127,7 @@ export class PassiveManager {
     const wildGrowthParams = this.getPassiveParams('wildGrowth');
     if (wildGrowthParams && wildGrowthParams.bonusEssence) {
       result.bonusEssence += wildGrowthParams.bonusEssence;
+      this.onFlashCard?.('wildGrowth');
     }
 
     // Elemental Resonance: only triggers on exactly 3-gem matches
@@ -140,6 +149,7 @@ export class PassiveManager {
             const activeOwned = this.ctx.ownedPowerUps.find(p => p.powerUpId === resonance.activePowerId);
             if (activeOwned && activeOwned.charges < activeOwned.maxCharges) {
               activeOwned.charges += 1;
+              this.onFlashCard?.(resonance.passiveId); // only flash when a charge is actually restored
             }
           }
         }
@@ -163,6 +173,7 @@ export class PassiveManager {
     if (sturdyParams && sturdyParams.turnSaveChance) {
       if (Math.random() * 100 < sturdyParams.turnSaveChance) {
         turnSaved = true;
+        this.onFlashCard?.('sturdy');
       }
     }
 
@@ -171,6 +182,7 @@ export class PassiveManager {
     if (windWalkerParams && windWalkerParams.bonusTurnChance) {
       if (Math.random() * 100 < windWalkerParams.bonusTurnChance) {
         bonusTurn = true;
+        this.onFlashCard?.('windWalker');
       }
     }
 
@@ -235,6 +247,8 @@ export class PassiveManager {
 
     if (allPositions.length === 0) return;
 
+    this.onFlashCard?.('combustion');
+
     // Visual effect — small orange bursts
     const scene = this.ctx.phaserScene;
     const flash = scene.add.graphics();
@@ -265,6 +279,7 @@ export class PassiveManager {
     const tectonicParams = this.getPassiveParams('tectonicPlates');
     if (tectonicParams && tectonicParams.bonusTurns) {
       result.bonusTurns += tectonicParams.bonusTurns;
+      this.onFlashCard?.('tectonicPlates');
     }
 
     return result;

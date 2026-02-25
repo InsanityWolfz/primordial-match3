@@ -21,6 +21,7 @@ export class PowerUpExecutor {
   private endRound: () => Promise<void>;
   private onActionComplete: () => void;
   private onFlashCard: (id: string) => void;
+  private onPowerTurnConsumed: () => void;
 
   // Element executors (initialized via setDamageSystem)
   private fireExecutor!: FirePowerExecutor;
@@ -39,6 +40,7 @@ export class PowerUpExecutor {
       endRound: () => Promise<void>;
       onActionComplete: () => void;
       onFlashCard: (id: string) => void;
+      onPowerTurnConsumed: () => void;
     },
   ) {
     this.ctx = ctx;
@@ -47,6 +49,7 @@ export class PowerUpExecutor {
     this.endRound = callbacks.endRound;
     this.onActionComplete = callbacks.onActionComplete;
     this.onFlashCard = callbacks.onFlashCard;
+    this.onPowerTurnConsumed = callbacks.onPowerTurnConsumed;
   }
 
   /**
@@ -79,6 +82,9 @@ export class PowerUpExecutor {
     owned.charges--;
     this.updateHudCharges(); // show charge removal immediately
     this.onFlashCard(id);
+    // All non-Transmute active powers cost a turn
+    this.ctx.turnsRemaining--;
+    this.onPowerTurnConsumed();
     this.cancelTargeting();
 
     switch (id) {
@@ -127,6 +133,9 @@ export class PowerUpExecutor {
       owned.charges--;
       this.updateHudCharges(); // show charge removal immediately
       this.onFlashCard(id);
+      // Non-Transmute targeted powers cost a turn
+      this.ctx.turnsRemaining--;
+      this.onPowerTurnConsumed();
       switch (id) {
         case 'fireball':
           await this.fireExecutor.executeFireball(owned.level, row, col);

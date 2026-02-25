@@ -13,6 +13,7 @@ export interface DamageResult {
 export class DamageSystem {
   private ctx: GameContext;
   private passiveManager!: PassiveManager;
+  private onGemsDestroyedCb?: (count: number) => void;
 
   constructor(ctx: GameContext) {
     this.ctx = ctx;
@@ -20,6 +21,11 @@ export class DamageSystem {
 
   setPassiveManager(passiveManager: PassiveManager): void {
     this.passiveManager = passiveManager;
+  }
+
+  /** Wire up the gem-destruction count callback (used for A×B=C round bonus). */
+  setOnGemsDestroyed(cb: (count: number) => void): void {
+    this.onGemsDestroyedCb = cb;
   }
 
   /**
@@ -127,12 +133,8 @@ export class DamageSystem {
       await Promise.all(destroyPromises);
 
       this.ctx.grid.clearPositions(toDestroy);
-    }
-
-    // Award essence
-    if (result.essenceGained > 0) {
-      this.ctx.essence += result.essenceGained;
-      this.ctx.updateEssenceDisplay();
+      // Report essence value (gems + passive bonuses) for A×B=C turn bonus
+      this.onGemsDestroyedCb?.(result.essenceGained);
     }
 
     return result;
@@ -227,12 +229,8 @@ export class DamageSystem {
     // Clear all destroyed positions
     if (toDestroy.length > 0) {
       this.ctx.grid.clearPositions(toDestroy);
-    }
-
-    // Award essence
-    if (result.essenceGained > 0) {
-      this.ctx.essence += result.essenceGained;
-      this.ctx.updateEssenceDisplay();
+      // Report essence value (gems + passive bonuses) for A×B=C turn bonus
+      this.onGemsDestroyedCb?.(result.essenceGained);
     }
 
     return result;

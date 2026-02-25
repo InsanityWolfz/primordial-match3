@@ -9,6 +9,7 @@ export class CascadeSystem {
   private executePostMatchPassives: (matchPositions: { row: number; col: number }[]) => Promise<void>;
   private damageSystem!: DamageSystem;
   private passiveManager!: PassiveManager;
+  private onMatchThreeCb?: () => void;
 
   constructor(ctx: GameContext, executePostMatchPassives: (matchPositions: { row: number; col: number }[]) => Promise<void>) {
     this.ctx = ctx;
@@ -23,36 +24,34 @@ export class CascadeSystem {
     this.passiveManager = passiveManager;
   }
 
+  /** Wire up the match count callback — fires for any match (3+) for A×B=C turn bonus. */
+  setOnMatchThree(cb: () => void): void {
+    this.onMatchThreeCb = cb;
+  }
+
   async processCascade(matches: { row: number; col: number }[], cascadeLevel: number): Promise<void> {
     // Calculate score with cascade multiplier
     const multiplier = Math.pow(GAME_CONFIG.cascadeMultiplier, cascadeLevel - 1);
     const points = Math.round(matches.length * GAME_CONFIG.scorePerGem * multiplier);
 
-    // Built-in cascade essence: each wave always gives cascadeLevel essence
-    // (so wave 1 = 1 essence, wave 2 = 2, wave 3 = 3, etc.)
-    const builtInCascadeEssence = cascadeLevel;
-
-    // Passive: match completed bonuses (Wild Growth) + any remaining CASCADE passive bonus
-    let passiveEssence = 0;
+    // Passive: match completed bonuses (Wild Growth, Elemental Resonance, etc.)
+    // Cascade wave bonus and CASCADE passive removed — A×B=C turn bonus handles essence income.
     if (this.passiveManager) {
-      // Determine element from the first gem in the match (all same element)
       const matchElement = matches.length > 0
         ? (this.ctx.grid.getGem(matches[0].row, matches[0].col)?.type.name ?? '')
         : '';
       const matchResult = this.passiveManager.onMatchCompleted(matchElement, matches.length);
-      // CASCADE passive is removed from shop but kept for backward compat
-      const cascadeEssencePerLevel = this.passiveManager.getCascadeEssenceBonus();
-      passiveEssence = matchResult.bonusEssence + cascadeEssencePerLevel * cascadeLevel;
-    }
-
-    const totalBonusEssence = builtInCascadeEssence + passiveEssence;
-    if (totalBonusEssence > 0) {
-      this.ctx.essence += totalBonusEssence;
-      this.ctx.updateEssenceDisplay();
+      if (matchResult.bonusEssence > 0) {
+        this.ctx.essence += matchResult.bonusEssence;
+        this.ctx.updateEssenceDisplay();
+      }
     }
 
     this.ctx.score += points;
     this.ctx.updateScoreDisplay();
+
+    // Track any valid match (3+) for A×B=C turn bonus
+    if (matches.length >= 3) this.onMatchThreeCb?.();
 
     // DamageSystem handles destruction, essence, and clearing
     await this.damageSystem.dealDamage(matches, 1, null);

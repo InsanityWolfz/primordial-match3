@@ -26,14 +26,14 @@ export interface PowerUpDefinition {
 // ─── Cost Arrays ───
 
 export const POWER_COSTS_20: number[] = [
-  5, 15, 20, 25, 50,
-  100, 150, 200, 250, 500,
-  600, 700, 800, 900, 1250,
-  1500, 2000, 2500, 3000, 5000,
+  25, 75, 100, 125, 250,
+  500, 750, 1000, 1250, 2500,
+  3000, 3500, 4000, 4500, 6250,
+  7500, 10000, 12500, 15000, 25000,
 ];
 
 export const PASSIVE_COSTS_5: number[] = [
-  5, 50, 150, 500, 2000,
+  25, 250, 750, 2500, 10000,
 ];
 
 export const POWER_MILESTONES = [5, 10, 15, 20];

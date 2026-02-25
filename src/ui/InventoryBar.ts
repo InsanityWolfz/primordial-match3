@@ -271,12 +271,14 @@ export class InventoryBar {
       this.elements.push(vd2);
     }
 
-    // ── Name + Level (left column) ──
+    // ── Name + Level + Cost (left column) ──
     const nSize   = h >= 60 ? 16 : (h >= 46 ? 14 : 12);
     const lvSize  = h >= 50 ? 12 : 10;
+    const costSize = 10;
     const nLineH  = nSize + 3;
     const lLineH  = lvSize + 2;
-    const blockH  = nLineH + lLineH;
+    const costLineH = costSize + 2;
+    const blockH  = nLineH + lLineH + costLineH;
     const blockY  = y + Math.floor((h - blockH) / 2);
 
     const nameT = this.scene.add.text(contentX, blockY, def.name, {
@@ -299,6 +301,20 @@ export class InventoryBar {
     });
     lvlT.setDepth(53);
     this.elements.push(lvlT);
+
+    // Upgrade cost label (next level cost, or MAX if at max level)
+    const isMaxed = owned.level >= def.maxLevel;
+    const nextCost = isMaxed ? null : (def.levels[owned.level]?.cost ?? null);
+    const costStr = isMaxed ? 'MAX' : (nextCost !== null ? `⬆ ${nextCost}` : '');
+    if (costStr) {
+      const costT = this.scene.add.text(contentX, blockY + nLineH + lLineH, costStr, {
+        fontSize: `${costSize}px`,
+        color: isMaxed ? '#44cc44' : '#aabb66',
+        fontFamily: 'Arial',
+      });
+      costT.setDepth(53);
+      this.elements.push(costT);
+    }
 
     // Vertical divider after name column
     const vd1 = this.scene.add.graphics();

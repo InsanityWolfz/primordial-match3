@@ -46,6 +46,17 @@ export class GameScene extends Phaser.Scene implements GameContext {
   private turnCountText!: Phaser.GameObjects.Text;
   // UI — essence pill
   private essenceValueText!: Phaser.GameObjects.Text;
+  // UI — shop button (top-right HUD, activates when hazards cleared)
+  private shopButtonBg!: Phaser.GameObjects.Graphics;
+  private shopButtonLabel!: Phaser.GameObjects.Text;
+  private shopButtonEssence!: Phaser.GameObjects.Text;
+  private shopButtonZone!: Phaser.GameObjects.Zone;
+  // UI — A×B=C essence breakdown
+  private essenceBreakdownFormula!: Phaser.GameObjects.Text;
+
+  // Round tracking for A×B=C essence bonus
+  private roundGemCount = 0;
+  private roundMatchThreeCount = 0;
 
   // Debug
   private debugGraphics: Phaser.GameObjects.Graphics | null = null;
@@ -84,6 +95,9 @@ export class GameScene extends Phaser.Scene implements GameContext {
     this.selectedGem = null;
     this.isSwapping = false;
     this.turnsRemaining = GAME_CONFIG.turnsPerRound;
+    // Reset per-round A×B=C counters
+    this.roundGemCount = 0;
+    this.roundMatchThreeCount = 0;
 
     if (data && data.round > 0) {
       this.essence = data.essence;
@@ -106,19 +120,22 @@ export class GameScene extends Phaser.Scene implements GameContext {
     this.drawGridPanel();
     this.drawHUDBar();
     this.drawEssencePill();
+    this.drawEssenceBreakdown();
 
-    // Hazard status display (sits at top of the inventory bar area, depth above bar bg)
-    const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
-    const gridBottom = GAME_CONFIG.gridOffsetY + GAME_CONFIG.gridRows * cellSize;
-    const barY = gridBottom + 8;
+    // Hazard status display — positioned just above the gem board, styled like HUD text
     this.hazardsCleared = false;
     this.hazardClearedBanner = null;
-    this.hazardStatusText = this.add.text(GAME_CONFIG.width / 2, barY + 16, '', {
-      fontSize: '15px',
-      color: '#ff8844',
-      fontFamily: 'Arial',
-      fontStyle: 'bold',
-    }).setOrigin(0.5, 0.5).setDepth(60);
+    this.hazardStatusText = this.add.text(
+      GAME_CONFIG.width / 2,
+      GAME_CONFIG.gridOffsetY - 8,
+      '',
+      {
+        fontSize: '13px',
+        color: '#ff8844',
+        fontFamily: 'Arial',
+        fontStyle: 'bold',
+      },
+    ).setOrigin(0.5, 1).setDepth(11);
   }
 
   private initializeSystems(): void {
@@ -147,8 +164,14 @@ export class GameScene extends Phaser.Scene implements GameContext {
       onActionComplete: () => {
         this.updateHazardStatus();
         this.checkHazardsCleared();
+        // Apply turn bonus for gem destruction that happened during this power use
+        this.applyAndResetTurnBonus();
       },
       onFlashCard: (id) => this.hudManager.flashCard(id),
+      onPowerTurnConsumed: () => {
+        this.updateTurnsDisplay();
+        this.updateShopButton();
+      },
     });
 
     // HazardManager
@@ -156,6 +179,7 @@ export class GameScene extends Phaser.Scene implements GameContext {
 
     // PassiveManager - stat passive hooks
     this.passiveManager = new PassiveManager(this);
+    this.passiveManager.setFlashCardCallback((id) => this.hudManager.flashCard(id));
 
     // DamageSystem - central damage pipeline
     this.damageSystem = new DamageSystem(this);
@@ -172,6 +196,16 @@ export class GameScene extends Phaser.Scene implements GameContext {
 
     // Wire CascadeSystem to PassiveManager for match hooks
     this.cascadeSystem.setPassiveManager(this.passiveManager);
+
+    // Wire A×B=C round bonus tracking callbacks
+    this.damageSystem.setOnGemsDestroyed((count) => {
+      this.roundGemCount += count;
+      this.updateEssenceBreakdown();
+    });
+    this.cascadeSystem.setOnMatchThree(() => {
+      this.roundMatchThreeCount++;
+      this.updateEssenceBreakdown();
+    });
 
     // Inventory bar — fills from grid bottom to screen bottom
     const cellSize2 = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
@@ -205,6 +239,8 @@ export class GameScene extends Phaser.Scene implements GameContext {
     this.turnCountText.setText(`${this.turnsRemaining} / ${GAME_CONFIG.turnsPerRound}`);
     this.turnCountText.setColor(color);
     this.redrawTurnDrainBar();
+    // Keep shop button essence preview up to date as turns are spent
+    this.updateShopButton();
   }
 
   getRandomGemType(): GemType {
@@ -213,7 +249,8 @@ export class GameScene extends Phaser.Scene implements GameContext {
   }
 
   findMatches(): { row: number; col: number }[] {
-    return this.grid.findMatches((r, c) => this.hazardManager.hasHazard(r, c));
+    // Hazarded gems can participate in matches (they just can't be swapped).
+    return this.grid.findMatches();
   }
 
   delay(ms: number): Promise<void> {
@@ -243,6 +280,7 @@ export class GameScene extends Phaser.Scene implements GameContext {
 
     this.hazardsCleared = true;
     this.updateHazardStatus();
+    this.updateShopButton();
 
     // Show a brief "Cleared!" banner
     if (this.hazardClearedBanner) this.hazardClearedBanner.destroy();
@@ -325,61 +363,83 @@ export class GameScene extends Phaser.Scene implements GameContext {
     this.turnDrainBar = this.add.graphics();
     this.turnDrainBar.setDepth(11);
 
-    // ROUND section (left)
-    this.add.text(120, 12, 'ROUND', {
+    // ROUND section (left, shifted to make room for shop button)
+    this.add.text(75, 12, 'ROUND', {
       fontSize: '11px',
       color: '#6666aa',
       fontFamily: 'Arial',
       fontStyle: 'bold',
     }).setOrigin(0.5, 0).setDepth(11);
 
-    // Round value — never changes mid-game, no need to store as class property
-    this.add.text(120, 28, `${this.round}`, {
+    this.add.text(75, 28, `${this.round}`, {
       fontSize: '32px',
       color: '#ffffff',
       fontFamily: 'Arial',
       fontStyle: 'bold',
     }).setOrigin(0.5, 0).setDepth(11);
 
-    // SCORE section (center)
-    this.add.text(360, 12, 'SCORE', {
+    // SCORE section (center-left)
+    this.add.text(225, 12, 'SCORE', {
       fontSize: '11px',
       color: '#6666aa',
       fontFamily: 'Arial',
       fontStyle: 'bold',
     }).setOrigin(0.5, 0).setDepth(11);
 
-    this.scoreValueText = this.add.text(360, 28, `${this.score}`, {
+    this.scoreValueText = this.add.text(225, 28, `${this.score}`, {
       fontSize: '32px',
       color: '#ffffff',
       fontFamily: 'Arial',
       fontStyle: 'bold',
     }).setOrigin(0.5, 0).setDepth(11);
 
-    // TURNS section (right)
-    this.add.text(600, 12, 'TURNS', {
+    // TURNS section (center-right)
+    this.add.text(375, 12, 'TURNS', {
       fontSize: '11px',
       color: '#6666aa',
       fontFamily: 'Arial',
       fontStyle: 'bold',
     }).setOrigin(0.5, 0).setDepth(11);
 
-    this.turnCountText = this.add.text(600, 28, `${this.turnsRemaining} / ${GAME_CONFIG.turnsPerRound}`, {
+    this.turnCountText = this.add.text(375, 28, `${this.turnsRemaining} / ${GAME_CONFIG.turnsPerRound}`, {
       fontSize: '28px',
       color: '#ffffff',
       fontFamily: 'Arial',
       fontStyle: 'bold',
     }).setOrigin(0.5, 0).setDepth(11);
 
+    // ── Shop Button (right side, x=452–710) ──
+    this.shopButtonBg = this.add.graphics();
+    this.shopButtonBg.setDepth(12);
+    this.drawShopButtonBg(false);
+
+    this.shopButtonLabel = this.add.text(586, 22, 'GO TO SHOP', {
+      fontSize: '14px',
+      color: '#555577',
+      fontFamily: 'Arial',
+      fontStyle: 'bold',
+    }).setOrigin(0.5, 0).setDepth(13);
+
+    this.shopButtonEssence = this.add.text(586, 44, 'CLEAR HAZARDS', {
+      fontSize: '11px',
+      color: '#444466',
+      fontFamily: 'Arial',
+    }).setOrigin(0.5, 0).setDepth(13);
+
+    this.shopButtonZone = this.add.zone(586, 40, 258, 68)
+      .setDepth(13)
+      .disableInteractive();
+    this.shopButtonZone.on('pointerdown', () => this.onShopButtonClick());
+
     // Draw initial drain bar
     this.redrawTurnDrainBar();
   }
 
   private drawEssencePill(): void {
-    const cx = GAME_CONFIG.width / 2;
-    const pillW = 200;
+    // Pill centered at x=360 (screen center), shop button sits to the right at x=452+
+    const pillW = 180;
     const pillH = 28;
-    const pillX = cx - pillW / 2;
+    const pillX = 270;   // center at x=360
     const pillY = 88;
 
     const pill = this.add.graphics();
@@ -389,7 +449,7 @@ export class GameScene extends Phaser.Scene implements GameContext {
     pill.strokeRoundedRect(pillX, pillY, pillW, pillH, 14);
     pill.setDepth(10);
 
-    // Diamond icon (two triangles forming a diamond shape)
+    // Diamond icon
     const iconX = pillX + 22;
     const iconY = pillY + 14;
     const ds = 6;
@@ -414,6 +474,103 @@ export class GameScene extends Phaser.Scene implements GameContext {
       fontFamily: 'Arial',
       fontStyle: 'bold',
     }).setOrigin(1, 0.5).setDepth(11);
+  }
+
+  /** Draws the static A×B=C turn bonus display below the essence pill. */
+  private drawEssenceBreakdown(): void {
+    const cx = 360; // centered at screen center, aligned with essence pill
+    const y = 120;
+
+    // "TURN BONUS" label
+    this.add.text(cx, y, 'TURN BONUS', {
+      fontSize: '10px',
+      color: '#6666aa',
+      fontFamily: 'Arial',
+      fontStyle: 'bold',
+    }).setOrigin(0.5, 0).setDepth(11);
+
+    // Thin separator aligned with pill (x=270 to x=450)
+    const sep = this.add.graphics();
+    sep.lineStyle(1, 0x333355, 0.8);
+    sep.lineBetween(270, y + 15, 450, y + 15);
+    sep.setDepth(10);
+
+    // Formula text (updated live each turn)
+    this.essenceBreakdownFormula = this.add.text(cx, y + 20, '0 × 0 = 0', {
+      fontSize: '12px',
+      color: '#aabbff',
+      fontFamily: 'Arial',
+      fontStyle: 'bold',
+    }).setOrigin(0.5, 0).setDepth(11);
+  }
+
+  /** Updates the A×B=C formula text with current turn counters. B has a floor of 1. */
+  updateEssenceBreakdown(): void {
+    if (!this.essenceBreakdownFormula) return;
+    const b = Math.max(1, this.roundMatchThreeCount);
+    const c = this.roundGemCount * b;
+    this.essenceBreakdownFormula.setText(
+      `${this.roundGemCount} × ${b} = ${c}`,
+    );
+  }
+
+  /**
+   * After the board settles each turn: apply A×B=C as a turn bonus to essence,
+   * then reset both counters so the next turn starts fresh.
+   * B has a floor of 1 so power-up gem destruction always pays out.
+   */
+  applyAndResetTurnBonus(): void {
+    const b = Math.max(1, this.roundMatchThreeCount);
+    const turnBonus = this.roundGemCount * b;
+    if (turnBonus > 0) {
+      this.essence += turnBonus;
+      this.updateEssenceDisplay();
+    }
+    this.roundGemCount = 0;
+    this.roundMatchThreeCount = 0;
+    this.updateEssenceBreakdown();
+  }
+
+  /** Redraws the shop button background in active (green) or inactive (grey) state. */
+  private drawShopButtonBg(active: boolean): void {
+    this.shopButtonBg.clear();
+    if (active) {
+      this.shopButtonBg.fillStyle(0x0d2218, 1);
+      this.shopButtonBg.fillRoundedRect(452, 6, 258, 68, 8);
+      this.shopButtonBg.lineStyle(1, 0x44cc88, 0.9);
+      this.shopButtonBg.strokeRoundedRect(452, 6, 258, 68, 8);
+    } else {
+      this.shopButtonBg.fillStyle(0x151520, 0.7);
+      this.shopButtonBg.fillRoundedRect(452, 6, 258, 68, 8);
+      this.shopButtonBg.lineStyle(1, 0x333355, 0.5);
+      this.shopButtonBg.strokeRoundedRect(452, 6, 258, 68, 8);
+    }
+  }
+
+  /** Updates the shop button text and interactivity based on hazard/turns state. */
+  updateShopButton(): void {
+    if (!this.shopButtonBg) return; // guard: called before drawHUDBar in some init paths
+    if (this.hazardsCleared) {
+      const bonus = this.round * this.turnsRemaining * 20;
+      this.drawShopButtonBg(true);
+      this.shopButtonLabel.setColor('#44cc88');
+      this.shopButtonEssence.setText(`${bonus} Essence`).setColor('#aaffcc');
+      this.shopButtonZone.setInteractive({ useHandCursor: true });
+    } else {
+      this.drawShopButtonBg(false);
+      this.shopButtonLabel.setColor('#555577');
+      this.shopButtonEssence.setText('CLEAR HAZARDS').setColor('#444466');
+      this.shopButtonZone.disableInteractive();
+    }
+  }
+
+  /** Called when the player clicks the shop button after clearing hazards. */
+  private onShopButtonClick(): void {
+    if (!this.hazardsCleared || this.isSwapping) return;
+    const bonus = this.round * this.turnsRemaining * 20;
+    this.essence += bonus;
+    this.updateEssenceDisplay();
+    this.endRound();
   }
 
   private redrawTurnDrainBar(): void {
@@ -475,10 +632,11 @@ export class GameScene extends Phaser.Scene implements GameContext {
     }
 
     if (this.grid.areAdjacent(this.selectedGem.gridRow, this.selectedGem.gridCol, gem.gridRow, gem.gridCol)) {
-      // Block swap if either gem has a blocking hazard (e.g., Ancient Ward)
+      // Block swap if either gem has ANY hazard on it — hazards can be matched
+      // through adjacent gems but the hazarded gem itself cannot be moved.
       if (
-        this.hazardManager.hasBlockingHazard(this.selectedGem.gridRow, this.selectedGem.gridCol) ||
-        this.hazardManager.hasBlockingHazard(gem.gridRow, gem.gridCol)
+        this.hazardManager.hasHazard(this.selectedGem.gridRow, this.selectedGem.gridCol) ||
+        this.hazardManager.hasHazard(gem.gridRow, gem.gridCol)
       ) {
         // Can't swap — deselect and give visual feedback
         this.selectedGem.deselect();
@@ -533,6 +691,9 @@ export class GameScene extends Phaser.Scene implements GameContext {
 
     // Refresh power-up HUD (Energy Siphon may have drained charges)
     this.hudManager.updateHudCharges();
+
+    // Apply A×B=C turn bonus then reset counters for next turn
+    this.applyAndResetTurnBonus();
 
     this.isSwapping = false;
 

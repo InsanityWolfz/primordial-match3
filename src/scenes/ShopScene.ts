@@ -20,6 +20,9 @@ export class ShopScene extends Phaser.Scene {
   private seenPowerIds: Set<string> = new Set();
   private seenPassiveIds: Set<string> = new Set();
 
+  // Reroll cost escalates ×1.5 per reroll within a shop visit; resets each visit
+  private rerollCost = SHOP_CONFIG.rerollCost;
+
   // Managed game objects for cleanup
   private powerSectionObjects: Phaser.GameObjects.GameObject[] = [];
   private passiveSectionObjects: Phaser.GameObjects.GameObject[] = [];
@@ -43,6 +46,7 @@ export class ShopScene extends Phaser.Scene {
     this.clearAllGroups();
     this.seenPowerIds = new Set();
     this.seenPassiveIds = new Set();
+    this.rerollCost = SHOP_CONFIG.rerollCost; // reset escalation each shop visit
 
     this.drawBackground();
     this.drawHUDBar();
@@ -492,7 +496,7 @@ export class ShopScene extends Phaser.Scene {
     this.destroyGroup(this.rerollObjects);
     this.rerollObjects = [];
 
-    const cost = SHOP_CONFIG.rerollCost;
+    const cost = this.rerollCost;
     const canReroll = this.runState.essence >= cost;
     const btnX = GAME_CONFIG.width / 2;
     const btnW = 200;
@@ -646,6 +650,8 @@ export class ShopScene extends Phaser.Scene {
     if (this.runState.essence < cost) return;
 
     this.runState.essence -= cost;
+    // Escalate cost for next reroll (×1.5, rounded up)
+    this.rerollCost = Math.ceil(this.rerollCost * 1.5);
     this.rollShopItems();
     this.refreshShop();
   }
