@@ -1,4 +1,4 @@
-import type Phaser from 'phaser';
+import Phaser from 'phaser';
 import { GAME_CONFIG } from '../config/gameConfig.ts';
 import { getPowerUpDef } from '../config/powerUps.ts';
 import type { OwnedPowerUp } from '../types/RunState.ts';
@@ -240,7 +240,7 @@ export class PowerDrawer {
       ease: 'Power2.Out',
       onComplete: () => {
         if (this.cardContainer) {
-          this.maskGraphics = this.scene.make.graphics({ add: false });
+          this.maskGraphics = this.scene.make.graphics();
           this.maskGraphics.fillRect(0, DRAWER_OPEN_Y + HEADER_H, W, DRAWER_H - HEADER_H);
           this.cardContainer.setMask(this.maskGraphics.createGeometryMask());
         }
