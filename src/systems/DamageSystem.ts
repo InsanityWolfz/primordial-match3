@@ -63,23 +63,24 @@ export class DamageSystem {
     const toDestroy: { row: number; col: number }[] = [];
     const hazardDestroyPromises: Promise<void>[] = [];
 
-    for (const pos of positions) {
-      // ── Enemy tile — damage per tile hit ──
+    // ── Enemy tiles — process all in parallel so numbers appear simultaneously ──
+    const enemyPositions = positions.filter(pos => this.ctx.grid.getEnemyAt(pos.row, pos.col) !== null);
+    await Promise.all(enemyPositions.map(async pos => {
       const enemy = this.ctx.grid.getEnemyAt(pos.row, pos.col);
-      if (enemy) {
-        if (enemy.hp > 0) { // only damage while still alive
-          const died = await this.ctx.enemyManager.damageEnemy(enemy, amount, element);
-          if (died) {
-            result.enemiesKilled++;
-            this.ctx.updateEnemyDisplay();
-          }
-          // Show floating damage number above the enemy tile
-          const ex = enemy.worldX + enemy.worldW / 2;
-          const ey = enemy.worldY + enemy.worldH / 2;
-          this.ctx.showDamageNumber(ex, ey, amount, true);
-        }
-        continue; // don't also process gem/hazard damage on this cell
+      if (!enemy || enemy.hp <= 0) return;
+      const died = await this.ctx.enemyManager.damageEnemy(enemy, amount, element);
+      if (died) {
+        result.enemiesKilled++;
+        this.ctx.updateEnemyDisplay();
       }
+      const ex = enemy.worldX + enemy.worldW / 2;
+      const ey = enemy.worldY + enemy.worldH / 2;
+      this.ctx.showDamageNumber(ex, ey, amount, element, true);
+    }));
+
+    for (const pos of positions) {
+      // ── Skip enemy tiles — already handled above ──
+      if (this.ctx.grid.getEnemyAt(pos.row, pos.col)) continue;
 
       // ── Normal gem cell ──
       const gem = this.ctx.grid.getGem(pos.row, pos.col);
@@ -118,6 +119,9 @@ export class DamageSystem {
       if (remainingDamage <= 0) continue;
 
       const killed = gem.takeDamage(remainingDamage);
+      const gx = gem.sprite.x;
+      const gy = gem.sprite.y;
+      this.ctx.showDamageNumber(gx, gy, remainingDamage, element, false);
       if (killed) {
         toDestroy.push(pos);
         result.destroyed.push(pos);
@@ -188,6 +192,9 @@ export class DamageSystem {
             result.enemiesKilled++;
             this.ctx.updateEnemyDisplay();
           }
+          const ex = enemy.worldX + enemy.worldW / 2;
+          const ey = enemy.worldY + enemy.worldH / 2;
+          this.ctx.showDamageNumber(ex, ey, amount, element, true);
         }
         continue;
       }
@@ -218,6 +225,9 @@ export class DamageSystem {
 
       if (remainingDamage > 0) {
         const killed = gem.takeDamage(remainingDamage);
+        const gx = gem.sprite.x;
+        const gy = gem.sprite.y;
+        this.ctx.showDamageNumber(gx, gy, remainingDamage, element, false);
         if (killed) {
           toDestroy.push(pos);
           result.destroyed.push(pos);

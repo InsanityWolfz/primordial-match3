@@ -194,6 +194,26 @@ export class InventoryBar {
     this.paintCircle(circleBg, ring, cx, cy, color, false, false);
     this.elements.push(circleBg, ring);
 
+    // Dim overlay when depleted
+    if (!hasCharges) {
+      const overlay = this.scene.add.graphics().setDepth(53);
+      overlay.fillStyle(0x000000, 0.55);
+      overlay.fillCircle(cx, cy, CIRCLE_R);
+      this.elements.push(overlay);
+    }
+
+    // Charge count inside the circle
+    const hexColor = '#' + color.toString(16).padStart(6, '0');
+    const chargeText = this.scene.add.text(cx, cy, `${owned.charges ?? 0}`, {
+      fontSize: '26px',
+      color: hasCharges ? hexColor : '#cc3333',
+      fontFamily: 'Arial',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 4,
+    }).setOrigin(0.5, 0.5).setDepth(54);
+    this.elements.push(chargeText);
+
     // Store for setActiveCard / flashCard
     this.circleMap.set(owned.powerUpId, {
       bg: circleBg, ring, color, cx, cy,
@@ -219,7 +239,7 @@ export class InventoryBar {
     });
   }
 
-  /** Renders name / level / charge pips below circles. Returns new curY. */
+  /** Renders name / level below circles. Returns new curY. */
   private renderActiveLabels(
     actives: OwnedPowerUp[],
     startY:  number,
@@ -232,9 +252,7 @@ export class InventoryBar {
       const def   = getPowerUpDef(owned.powerUpId);
       if (!def) continue;
 
-      const gemType  = GAME_CONFIG.gemTypes.find(g => g.name === def.element);
-      const color    = gemType?.color ?? 0x888888;
-      const cx       = H_PAD + slotW * i + slotW / 2;
+      const cx = H_PAD + slotW * i + slotW / 2;
 
       // Name
       const nameT = this.scene.add.text(cx, startY, def.name, {
@@ -250,39 +268,14 @@ export class InventoryBar {
       lvT.setOrigin(0.5, 0).setDepth(52);
       this.elements.push(lvT);
 
-      // Label tap zone — opens drawer
-      const labelZone = this.scene.add.zone(cx, startY + 25, slotW * 0.9, 50);
+      // Tap zone — opens drawer
+      const labelZone = this.scene.add.zone(cx, startY + 13, slotW * 0.9, 36);
       labelZone.setInteractive({ useHandCursor: true });
       labelZone.setDepth(56);
       labelZone.on('pointerdown', () => this.options.onOpenDrawer?.());
       this.elements.push(labelZone);
 
-      // Charge pips
-      const pipY = startY + 28;
-      if (owned.charges !== undefined && owned.maxCharges !== undefined) {
-        const maxPips = Math.min(owned.maxCharges, 6);
-        const pipR    = 4;
-        const pipGap  = 4;
-        const totalPW = maxPips * (pipR * 2) + (maxPips - 1) * pipGap;
-        let   px      = cx - totalPW / 2;
-
-        for (let j = 0; j < maxPips; j++) {
-          const filled = j < owned.charges;
-          const pip    = this.scene.add.graphics();
-          pip.fillStyle(filled ? color : 0x1a1a28, filled ? 0.9 : 0.4);
-          pip.fillCircle(px + pipR, pipY + pipR, pipR);
-          if (filled) {
-            pip.lineStyle(1, 0xffffff, 0.15);
-            pip.strokeCircle(px + pipR, pipY + pipR, pipR);
-          }
-          pip.setDepth(52);
-          this.elements.push(pip);
-          px += pipR * 2 + pipGap;
-        }
-        bottom = Math.max(bottom, pipY + pipR * 2 + 4);
-      } else {
-        bottom = Math.max(bottom, pipY);
-      }
+      bottom = Math.max(bottom, startY + 30);
     }
 
     return bottom;

@@ -6,7 +6,11 @@ import type { Gem } from './Gem.ts';
 export class Hazard {
   // Map hazard IDs to their sprite keys — add entries here as sprites are created
   private static readonly SPRITE_KEYS: Partial<Record<string, string>> = {
-    ice: 'hazard-ice',
+    ice:          'hazard-ice',
+    stone:        'hazard-stone',
+    thornVine:    'hazard-thornVine',
+    energySiphon: 'hazard-energySiphon',
+    ancientWard:  'hazard-ancientWard',
   };
 
   scene: Phaser.Scene;

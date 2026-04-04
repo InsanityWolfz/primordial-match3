@@ -260,6 +260,20 @@ export class ShopScene extends Phaser.Scene {
     }).length;
   }
 
+  private getOwnedActivePowerCount(): number {
+    return this.runState.ownedPowerUps.filter(p => {
+      const def = getPowerUpDef(p.powerUpId);
+      return def && def.category === 'activePower';
+    }).length;
+  }
+
+  private getOwnedPassivePowerCount(): number {
+    return this.runState.ownedPowerUps.filter(p => {
+      const def = getPowerUpDef(p.powerUpId);
+      return def && def.category === 'passivePower';
+    }).length;
+  }
+
   private getOwnedPassiveCount(): number {
     return this.runState.ownedPowerUps.filter(p => {
       const def = getPowerUpDef(p.powerUpId);
@@ -326,6 +340,9 @@ export class ShopScene extends Phaser.Scene {
     }
 
     const powerSlotsFull = powerCount >= this.runState.powerSlotCount;
+    const activePowerCount = this.getOwnedActivePowerCount();
+    const passivePowerCount = this.getOwnedPassivePowerCount();
+    const { maxActivePowers, maxPassivePowers } = SHOP_CONFIG.powerSlots;
 
     let cardY = startY + headerH + 8;
     let totalHeight = headerH + 8;
@@ -337,7 +354,11 @@ export class ShopScene extends Phaser.Scene {
       const currentLevel = owned ? owned.level : 0;
       const isMaxLevel = currentLevel >= def.maxLevel;
       const isNew = currentLevel === 0;
-      const slotBlocked = powerSlotsFull && isNew;
+      const categoryFull = isNew && (
+        (def.category === 'activePower' && activePowerCount >= maxActivePowers) ||
+        (def.category === 'passivePower' && passivePowerCount >= maxPassivePowers)
+      );
+      const slotBlocked = isNew && (powerSlotsFull || categoryFull);
       const cost = isMaxLevel ? 0 : def.levels[currentLevel].cost;
       const canAfford = !isMaxLevel && !slotBlocked && this.runState.essence >= cost;
 
@@ -635,6 +656,9 @@ export class ShopScene extends Phaser.Scene {
         if (this.getOwnedPassiveCount() >= this.runState.passiveSlotCount) return;
       } else {
         if (this.getOwnedPowerCount() >= this.runState.powerSlotCount) return;
+        const { maxActivePowers, maxPassivePowers } = SHOP_CONFIG.powerSlots;
+        if (def.category === 'activePower' && this.getOwnedActivePowerCount() >= maxActivePowers) return;
+        if (def.category === 'passivePower' && this.getOwnedPassivePowerCount() >= maxPassivePowers) return;
       }
     }
 

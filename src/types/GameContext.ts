@@ -23,7 +23,7 @@ export interface GameContext {
   updateEssenceDisplay(): void;
   updateTurnsDisplay(): void;
   updateEnemyDisplay(): void;
-  showDamageNumber(worldX: number, worldY: number, amount: number, isEnemy?: boolean): void;
+  showDamageNumber(worldX: number, worldY: number, amount: number, element?: string | null, isEnemy?: boolean): void;
   flashPowerActivation(): void;
 
   // Gem helpers

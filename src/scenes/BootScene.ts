@@ -9,7 +9,18 @@ export class BootScene extends Phaser.Scene {
     this.createLoadingBar();
 
     // Hazard sprites
-    this.load.image('hazard-ice', 'assets/sprites/hazard-ice.png');
+    this.load.image('hazard-ice',         'assets/sprites/hazard-ice.png');
+    this.load.image('hazard-stone',       'assets/sprites/hazard-stone.png');
+    this.load.image('hazard-thornVine',   'assets/sprites/hazard-vines.png');
+    this.load.image('hazard-energySiphon','assets/sprites/hazard-energysiphon.png');
+    this.load.image('hazard-ancientWard', 'assets/sprites/hazard-ancientward.png');
+
+    // Enemy sprites
+    this.load.image('enemy-fireImp',        'assets/sprites/enemy_fireImp.png');
+    this.load.image('enemy-iceWhelp',       'assets/sprites/enemy_iceWhelp.png');
+    this.load.image('enemy-lightningWraith','assets/sprites/enemy_lightningWraith.png');
+    this.load.image('enemy-vineMonster',    'assets/sprites/enemy_vineMonster.png');
+    this.load.image('enemy-earthGolem',     'assets/sprites/enemy_earthGolem.png');
 
     // Gem sprites
     this.load.image('gem-fire',      'assets/sprites/gem-fire.png');
@@ -38,6 +49,6 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.scene.start('StarterScene');
+    this.scene.start('TitleScene');
   }
 }

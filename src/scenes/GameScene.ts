@@ -66,8 +66,15 @@ export class GameScene extends Phaser.Scene implements GameContext {
   private shopButtonLabel!: Phaser.GameObjects.Text;
   private shopButtonSub!: Phaser.GameObjects.Text;
   private shopButtonZone!: Phaser.GameObjects.Zone;
-  // UI — per-round essence breakdown
-  private essenceBreakdownFormula!: Phaser.GameObjects.Text;
+  // UI — per-round essence breakdown boxes
+  private bdGemsText!: Phaser.GameObjects.Text;
+  private bdM3Text!: Phaser.GameObjects.Text;
+  private bdM4Text!: Phaser.GameObjects.Text;
+  private bdM5Text!: Phaser.GameObjects.Text;
+  private bdTotalText!: Phaser.GameObjects.Text;
+  private bdM3Group: Phaser.GameObjects.GameObject[] = [];
+  private bdM4Group: Phaser.GameObjects.GameObject[] = [];
+  private bdM5Group: Phaser.GameObjects.GameObject[] = [];
 
   // Y position where the inventory panel starts (below the grid)
   private inventoryPanelY = 0;
@@ -115,10 +122,47 @@ export class GameScene extends Phaser.Scene implements GameContext {
 
     if (!modifier) return;
 
-    // Show modifier name just below the HUD white line, under the ROUND display
-    this.add.text(75, 82, modifier.name, {
-      fontSize: '9px', color: '#cc9944', fontFamily: 'Arial', fontStyle: 'bold',
+    // Modifier name — larger, clickable
+    const modLabel = this.add.text(75, 82, `⚡ ${modifier.name}`, {
+      fontSize: '13px', color: '#ffcc44', fontFamily: 'Arial', fontStyle: 'bold',
     }).setOrigin(0.5, 0).setDepth(11);
+    modLabel.setInteractive({ useHandCursor: true });
+
+    // Tooltip (hidden until tapped)
+    const tipW = 210, tipPad = 10;
+    const tipBg = this.add.graphics().setDepth(30).setVisible(false);
+    const tipText = this.add.text(0, 0, modifier.description, {
+      fontSize: '12px', color: '#ddbb66', fontFamily: 'Arial',
+      wordWrap: { width: tipW - tipPad * 2 },
+    }).setOrigin(0, 0).setDepth(31).setVisible(false);
+
+    const showTooltip = (): void => {
+      // Position below the label, clamped to screen
+      const lx = modLabel.x - modLabel.width / 2;
+      const ly = modLabel.y + modLabel.height + 4;
+      const tipH = tipText.height + tipPad * 2;
+
+      tipBg.clear();
+      tipBg.fillStyle(0x0d0d22, 0.96);
+      tipBg.fillRoundedRect(lx, ly, tipW, tipH, 6);
+      tipBg.lineStyle(1, 0xcc9944, 0.85);
+      tipBg.strokeRoundedRect(lx, ly, tipW, tipH, 6);
+      tipBg.setVisible(true);
+
+      tipText.setPosition(lx + tipPad, ly + tipPad);
+      tipText.setVisible(true);
+    };
+
+    let open = false;
+    modLabel.on('pointerdown', () => {
+      open = !open;
+      if (open) {
+        showTooltip();
+      } else {
+        tipBg.setVisible(false);
+        tipText.setVisible(false);
+      }
+    });
 
     switch (modifier.id) {
       case 'rush':
@@ -314,24 +358,54 @@ export class GameScene extends Phaser.Scene implements GameContext {
 
   /**
    * Spawn a floating damage number at a world position that floats upward and fades out.
+   * element: the attacking element for color coding (null = match/no element).
+   * isEnemy: true when hitting an enemy — uses a larger font.
    */
-  showDamageNumber(worldX: number, worldY: number, amount: number, isEnemy = false): void {
-    const color = isEnemy ? (amount >= 3 ? '#ff4444' : '#ff8844') : '#ffffff';
+  showDamageNumber(worldX: number, worldY: number, amount: number, element: string | null = null, isEnemy = false): void {
+    const ELEMENT_COLORS: Record<string, string> = {
+      fire:      '#ff4422',
+      water:     '#44aaff',
+      earth:     '#cc8833',
+      air:       '#cceeff',
+      lightning: '#ffee00',
+      nature:    '#44dd44',
+    };
+
+    const color = element ? (ELEMENT_COLORS[element] ?? '#ffffff') : '#ffffff';
+    const fontSize = isEnemy ? '30px' : '20px';
+    const strokeThickness = isEnemy ? 4 : 3;
+    const floatDist = isEnemy ? 70 : 50;
+    const duration = isEnemy ? 1100 : 850;
+
+    // Slight random horizontal drift so stacked numbers don't overlap
+    const driftX = (Math.random() - 0.5) * 20;
+
     const text = this.add.text(worldX, worldY, `-${amount}`, {
-      fontSize: isEnemy ? '18px' : '14px',
+      fontSize,
       color,
       fontFamily: 'Arial',
       fontStyle: 'bold',
       stroke: '#000000',
-      strokeThickness: 2,
-    }).setOrigin(0.5, 0.5).setDepth(20);
+      strokeThickness,
+    }).setOrigin(0.5, 0.5).setDepth(50);
+
+    // Pop scale then float up and fade
+    this.tweens.add({
+      targets: text,
+      scaleX: { from: 1.4, to: 1 },
+      scaleY: { from: 1.4, to: 1 },
+      duration: 120,
+      ease: 'Back.easeOut',
+    });
 
     this.tweens.add({
       targets: text,
-      y: worldY - 40,
-      alpha: 0,
-      duration: 600,
-      ease: 'Power1',
+      x: worldX + driftX,
+      y: worldY - floatDist,
+      alpha: { from: 1, to: 0 },
+      duration,
+      ease: 'Power2',
+      delay: 100,
       onComplete: () => text.destroy(),
     });
   }
@@ -494,13 +568,105 @@ export class GameScene extends Phaser.Scene implements GameContext {
   }
 
   private drawEssenceBreakdown(): void {
-    const cx = 360, y = 120;
-    this.add.text(cx, y, 'ROUND ESSENCE', { fontSize: '10px', color: '#6666aa', fontFamily: 'Arial', fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(11);
-    const sep = this.add.graphics();
-    sep.lineStyle(1, 0x333355, 0.8);
-    sep.lineBetween(270, y + 15, 450, y + 15);
-    sep.setDepth(10);
-    this.essenceBreakdownFormula = this.add.text(cx, y + 20, '0 gems', { fontSize: '11px', color: '#aabbff', fontFamily: 'Arial', fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(11);
+    const cX = 180, cY = 124, cW = 360, cH = 74;
+    const boxW = 38, boxH = 38, opW = 28, totalBoxW = 48;
+    const contentW = 4 * boxW + totalBoxW + 4 * opW;
+    const startX = cX + (cW - contentW) / 2;
+    const boxCY = cY + cH / 2;
+    const DEPTH = 11;
+
+    // Container
+    const container = this.add.graphics().setDepth(10);
+    container.fillStyle(0x06060f, 0.92);
+    container.fillRoundedRect(cX, cY, cW, cH, 8);
+    container.lineStyle(1, 0x2233aa, 0.7);
+    container.strokeRoundedRect(cX, cY, cW, cH, 8);
+
+    // Helper: draw a box and return its center X
+    const drawBox = (lx: number, dim = false): number => {
+      const cx2 = lx + boxW / 2;
+      const g = this.add.graphics().setDepth(DEPTH - 1);
+      g.fillStyle(0x10102a, dim ? 0.35 : 0.9);
+      g.fillRoundedRect(lx, boxCY - boxH / 2, boxW, boxH, 5);
+      g.lineStyle(1, 0x3344bb, dim ? 0.2 : 0.55);
+      g.strokeRoundedRect(lx, boxCY - boxH / 2, boxW, boxH, 5);
+      return cx2;
+    };
+
+    const drawTotalBox = (lx: number): number => {
+      const cx2 = lx + totalBoxW / 2;
+      const g = this.add.graphics().setDepth(DEPTH - 1);
+      g.fillStyle(0x181408, 0.92);
+      g.fillRoundedRect(lx, boxCY - boxH / 2, totalBoxW, boxH, 5);
+      g.lineStyle(1, 0x887722, 0.7);
+      g.strokeRoundedRect(lx, boxCY - boxH / 2, totalBoxW, boxH, 5);
+      return cx2;
+    };
+
+    const txt = (x: number, y: number, s: string, size: string, color: string, originX = 0.5) =>
+      this.add.text(x, y, s, { fontSize: size, color, fontFamily: 'Arial', fontStyle: 'bold' })
+        .setOrigin(originX, 0.5).setDepth(DEPTH);
+
+    const opColor = '#555577', labelColor = '#4455aa', rateColor = '#7788cc';
+
+    // ── Box 1: Gems ──
+    let lx = startX;
+    drawBox(lx);
+    txt(lx + boxW / 2, boxCY - boxH / 2 - 9, ' ', '9px', rateColor);     // spacer (no rate)
+    this.bdGemsText = txt(lx + boxW / 2, boxCY, '0', '18px', '#aabbff');
+    txt(lx + boxW / 2, boxCY + boxH / 2 + 9, 'GEMS', '9px', labelColor);
+    lx += boxW;
+
+    // ── Operator × ──
+    txt(lx + opW / 2, boxCY, '×', '14px', opColor);
+    lx += opW;
+
+    // ── Box 2: Match-3 ──
+    this.bdM3Group = [];
+    const cx3 = drawBox(lx, true);
+    this.bdM3Group.push(txt(cx3, boxCY - boxH / 2 - 9, '+8%', '9px', rateColor));
+    this.bdM3Text = txt(cx3, boxCY, '0', '18px', '#aabbff');
+    this.bdM3Group.push(this.bdM3Text);
+    this.bdM3Group.push(txt(cx3, boxCY + boxH / 2 + 9, 'MATCH-3', '9px', labelColor));
+    lx += boxW;
+
+    // ── Operator × ──
+    this.bdM3Group.push(txt(lx + opW / 2, boxCY, '×', '14px', opColor));
+    lx += opW;
+
+    // ── Box 3: Match-4 ──
+    this.bdM4Group = [];
+    const cx4 = drawBox(lx, true);
+    this.bdM4Group.push(txt(cx4, boxCY - boxH / 2 - 9, '+20%', '9px', rateColor));
+    this.bdM4Text = txt(cx4, boxCY, '0', '18px', '#aabbff');
+    this.bdM4Group.push(this.bdM4Text);
+    this.bdM4Group.push(txt(cx4, boxCY + boxH / 2 + 9, 'MATCH-4', '9px', labelColor));
+    lx += boxW;
+
+    // ── Operator × ──
+    this.bdM4Group.push(txt(lx + opW / 2, boxCY, '×', '14px', opColor));
+    lx += opW;
+
+    // ── Box 4: Match-5 ──
+    this.bdM5Group = [];
+    const cx5 = drawBox(lx, true);
+    this.bdM5Group.push(txt(cx5, boxCY - boxH / 2 - 9, '+50%', '9px', rateColor));
+    this.bdM5Text = txt(cx5, boxCY, '0', '18px', '#aabbff');
+    this.bdM5Group.push(this.bdM5Text);
+    this.bdM5Group.push(txt(cx5, boxCY + boxH / 2 + 9, 'MATCH-5', '9px', labelColor));
+    lx += boxW;
+
+    // ── Operator = ──
+    txt(lx + opW / 2, boxCY, '=', '14px', opColor);
+    lx += opW;
+
+    // ── Box 5: Total ──
+    const cxT = drawTotalBox(lx);
+    txt(cxT, boxCY - boxH / 2 - 9, ' ', '9px', rateColor);               // spacer
+    this.bdTotalText = txt(cxT, boxCY, '0', '18px', '#ffffaa');
+    txt(cxT, boxCY + boxH / 2 + 9, 'TOTAL', '9px', '#887733');
+
+    this.updateEssenceBreakdown();
   }
 
   // Bonus essence for turns the player didn't need after clearing enemies.
@@ -521,14 +687,24 @@ export class GameScene extends Phaser.Scene implements GameContext {
   }
 
   updateEssenceBreakdown(): void {
-    if (!this.essenceBreakdownFormula) return;
-    const mult    = this.calcEssenceMultiplier();
-    const preview = Math.floor(this.roundGemsDestroyed * mult);
-    const parts   = [`${this.roundGemsDestroyed}g`];
-    if (this.roundMatch3Count > 0) parts.push(`${this.roundMatch3Count}m3×.08`);
-    if (this.roundMatch4Count > 0) parts.push(`${this.roundMatch4Count}m4×.20`);
-    if (this.roundMatch5Count > 0) parts.push(`${this.roundMatch5Count}m5×.50`);
-    this.essenceBreakdownFormula.setText(parts.join(' × ') + ` = ${preview}`);
+    if (!this.bdGemsText) return;
+
+    const preview = Math.floor(this.roundGemsDestroyed * this.calcEssenceMultiplier() * this.essenceMultiplier);
+
+    this.bdGemsText.setText(`${this.roundGemsDestroyed}`);
+    this.bdM3Text.setText(`${this.roundMatch3Count}`);
+    this.bdM4Text.setText(`${this.roundMatch4Count}`);
+    this.bdM5Text.setText(`${this.roundMatch5Count}`);
+    this.bdTotalText.setText(`${preview}`);
+
+    // Dim groups whose count is still zero
+    const setGroupAlpha = (group: Phaser.GameObjects.GameObject[], hasValue: boolean) => {
+      const a = hasValue ? 1 : 0.3;
+      group.forEach(o => (o as Phaser.GameObjects.Text).setAlpha(a));
+    };
+    setGroupAlpha(this.bdM3Group, this.roundMatch3Count > 0);
+    setGroupAlpha(this.bdM4Group, this.roundMatch4Count > 0);
+    setGroupAlpha(this.bdM5Group, this.roundMatch5Count > 0);
   }
 
   private drawShopButtonBg(active: boolean): void {

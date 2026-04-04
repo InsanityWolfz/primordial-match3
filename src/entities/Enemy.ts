@@ -34,6 +34,7 @@ export class Enemy {
 
   private scene: Phaser.Scene;
   private body: Phaser.GameObjects.Graphics;
+  private spriteImage?: Phaser.GameObjects.Image;
   private hpBarBg: Phaser.GameObjects.Graphics;
   private hpBarFill: Phaser.GameObjects.Graphics;
   private badgeText?: Phaser.GameObjects.Text;
@@ -72,10 +73,20 @@ export class Enemy {
     this.worldW = widthInCells * cellSize - padding;
     this.worldH = heightInCells * cellSize - padding;
 
-    // Body rectangle
+    // Body rectangle (background behind sprite)
     this.body = scene.add.graphics();
-    this.body.setDepth(5); // above gems (depth 0) but below HUD (depth 10)
+    this.body.setDepth(4);
     this.drawBody();
+
+    // Sprite image (scaled to fill the enemy area)
+    const spriteKey = Enemy.spriteKeyForSize(widthInCells, heightInCells);
+    if (spriteKey && scene.textures.exists(spriteKey)) {
+      const cx = this.worldX + this.worldW / 2;
+      const cy = this.worldY + this.worldH / 2;
+      this.spriteImage = scene.add.image(cx, cy, spriteKey);
+      this.spriteImage.setDisplaySize(this.worldW, this.worldH);
+      this.spriteImage.setDepth(5);
+    }
 
     // HP bar background (dark strip above the enemy)
     const barH = 6;
@@ -104,6 +115,20 @@ export class Enemy {
     this.hpText.setDepth(7);
 
     this.drawHpBar();
+  }
+
+  // ──────────────── STATIC HELPERS ────────────────
+
+  /** Map widthInCells × heightInCells to a loaded sprite key, or null if no sprite exists. */
+  static spriteKeyForSize(w: number, h: number): string | null {
+    const map: Record<string, string> = {
+      '1x2': 'enemy-fireImp',
+      '2x2': 'enemy-iceWhelp',
+      '2x3': 'enemy-lightningWraith',
+      '3x3': 'enemy-vineMonster',
+      '3x4': 'enemy-earthGolem',
+    };
+    return map[`${w}x${h}`] ?? null;
   }
 
   // ──────────────── TRAIT ────────────────
@@ -186,11 +211,17 @@ export class Enemy {
     this.hp = Math.max(0, this.hp - effective);
     this.drawHpBar();
 
-    // Flash the body red briefly, then restore
+    // Flash briefly on hit
     this.body.setAlpha(0.4);
+    this.spriteImage?.setAlpha(0.4);
     this.scene.time.delayedCall(120, () => {
-      if (this.hp > 0) this.body.setAlpha(0.85);
+      if (this.hp > 0) {
+        this.body.setAlpha(0.85);
+        this.spriteImage?.setAlpha(1);
+      }
     });
+
+    if (this.hp > 0) this.playShakeAnimation();
 
     return this.hp <= 0;
   }
@@ -209,20 +240,25 @@ export class Enemy {
 
   private drawBody(): void {
     this.body.clear();
-    // Main fill
-    this.body.fillStyle(this.color, 0.85);
-    this.body.fillRect(this.worldX, this.worldY, this.worldW, this.worldH);
-    // Border
-    this.body.lineStyle(2, 0xffffff, 0.5);
-    this.body.strokeRect(this.worldX, this.worldY, this.worldW, this.worldH);
-    // Simple cross-hatch pattern to distinguish from gems
-    this.body.lineStyle(1, 0x000000, 0.2);
-    const step = 16;
-    for (let x = this.worldX; x < this.worldX + this.worldW; x += step) {
-      this.body.lineBetween(x, this.worldY, x, this.worldY + this.worldH);
-    }
-    for (let y = this.worldY; y < this.worldY + this.worldH; y += step) {
-      this.body.lineBetween(this.worldX, y, this.worldX + this.worldW, y);
+    const hasSpriteKey = Enemy.spriteKeyForSize(this.widthInCells, this.heightInCells) !== null;
+    if (hasSpriteKey) {
+      // Dark backing panel behind the sprite
+      this.body.fillStyle(0x000000, 0.45);
+      this.body.fillRect(this.worldX, this.worldY, this.worldW, this.worldH);
+    } else {
+      // Fallback: colored rectangle with crosshatch for unknown sizes
+      this.body.fillStyle(this.color, 0.85);
+      this.body.fillRect(this.worldX, this.worldY, this.worldW, this.worldH);
+      this.body.lineStyle(2, 0xffffff, 0.5);
+      this.body.strokeRect(this.worldX, this.worldY, this.worldW, this.worldH);
+      this.body.lineStyle(1, 0x000000, 0.2);
+      const step = 16;
+      for (let x = this.worldX; x < this.worldX + this.worldW; x += step) {
+        this.body.lineBetween(x, this.worldY, x, this.worldY + this.worldH);
+      }
+      for (let y = this.worldY; y < this.worldY + this.worldH; y += step) {
+        this.body.lineBetween(this.worldX, y, this.worldX + this.worldW, y);
+      }
     }
   }
 
@@ -246,10 +282,32 @@ export class Enemy {
   // ──────────────── ANIMATIONS ────────────────
 
   /**
+   * Quick horizontal shake on hit.
+   */
+  private playShakeAnimation(): void {
+    const targets: Array<Phaser.GameObjects.Graphics | Phaser.GameObjects.Text | Phaser.GameObjects.Image> = [
+      this.body, this.hpBarBg, this.hpBarFill, this.hpText,
+    ];
+    if (this.spriteImage) targets.push(this.spriteImage);
+    if (this.badgeText) targets.push(this.badgeText);
+
+    // Capture each object's original x so we offset relative to it
+    const originX = targets.map(obj => obj.x);
+
+    const offsets = [5, -5, 3, -3, 1, 0];
+    offsets.forEach((dx, i) => {
+      this.scene.time.delayedCall(i * 35, () => {
+        targets.forEach((obj, j) => { obj.x = originX[j] + dx; });
+      });
+    });
+  }
+
+  /**
    * Play a death animation and resolve when done.
    */
   playDeathAnimation(scene: Phaser.Scene): Promise<void> {
     const targets: Phaser.GameObjects.GameObject[] = [this.body, this.hpBarBg, this.hpBarFill, this.hpText];
+    if (this.spriteImage) targets.push(this.spriteImage);
     if (this.badgeText) targets.push(this.badgeText);
     return new Promise(resolve => {
       scene.tweens.add({
@@ -269,6 +327,7 @@ export class Enemy {
    */
   destroy(): void {
     this.body.destroy();
+    this.spriteImage?.destroy();
     this.hpBarBg.destroy();
     this.hpBarFill.destroy();
     this.hpText.destroy();

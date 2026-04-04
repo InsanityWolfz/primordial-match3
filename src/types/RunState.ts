@@ -9,7 +9,7 @@ export interface RunState {
   essence: number;
   round: number;
   ownedPowerUps: OwnedPowerUp[];
-  powerSlotCount: number;     // shared active + passive power slots (starts 4, max 8)
+  powerSlotCount: number;     // shared activePower + passivePower slots (starts 4, max 8; max 4 of each category)
   passiveSlotCount: number;   // stat passive slots (starts 2, max 8)
   // Persisted for balance logging — stable across all rounds in the same run
   runId?: string;

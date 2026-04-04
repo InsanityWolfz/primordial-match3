@@ -5,11 +5,13 @@ export const SHOP_CONFIG = {
     initial: 4,
     max: 8,
     costs: [500, 1250, 2500, 5000],  // cost for slot 5, 6, 7, 8
+    maxActivePowers: 4,   // of the 8 total, at most 4 can be activePower
+    maxPassivePowers: 4,  // of the 8 total, at most 4 can be passivePower
   },
   passiveSlots: {
     initial: 2,
     max: 8,
-    costs: [500, 1250, 2500, 5000, 12500, 25000],  // cost for slot 3, 4, 5, 6, 7, 8
+    costs: [500, 1250, 2500, 5000, 12500, 25000],  // cost for slot 3–8
   },
   shopOfferSlots: {
     powers: 3,     // number of activePower + passivePower cards shown
