@@ -94,7 +94,7 @@ export const POWER_PLANT: PowerUpDefinition = {
 };
 
 // ─── LIGHTNING ROD (passive) ───
-// Chance to refund Lightning charge
+// Chance to refund Chainstrike charge on use
 const strikeTwiceLevels = generatePassive5Levels(
   [
     { refundChance: 10 },
@@ -122,39 +122,6 @@ export const STRIKE_TWICE: PowerUpDefinition = {
   levels: strikeTwiceLevels,
 };
 
-// ─── CHARGE UP (passivePower) ───
-// Matching exactly 3 lightning gems has a chance to refund 1 Lightning charge
-// Lv1: 10% → Lv5: 20% → Lv10: 30% → Lv15: 40% → Lv20: 50%
-const chargeUpLevels = generatePower20Levels(
-  [
-    { triggerChance: 10 },
-    { triggerChance: 20 },
-    { triggerChance: 30 },
-    { triggerChance: 40 },
-    { triggerChance: 50 },
-  ],
-  [
-    'Matching 3 lightning gems: 10% chance to refund 1 Lightning charge',
-    'Matching 3 lightning gems: 20% chance to refund 1 Lightning charge',
-    'Matching 3 lightning gems: 30% chance to refund 1 Lightning charge',
-    'Matching 3 lightning gems: 40% chance to refund 1 Lightning charge',
-    'Matching 3 lightning gems: 50% chance to refund 1 Lightning charge',
-  ],
-  undefined, undefined,
-  (p) => `Matching 3 lightning gems: ${p.triggerChance}% chance to refund 1 Lightning charge`,
-);
-
-export const CHARGE_UP: PowerUpDefinition = {
-  id: 'chargeUp',
-  name: 'Charge Up',
-  element: 'lightning',
-  category: 'passive',
-  maxLevel: 20,
-  requires: 'chainstrike',
-  levels: chargeUpLevels,
-  milestones: POWER_MILESTONES,
-};
-
 export const LIGHTNING_POWERS: PowerUpDefinition[] = [
-  LIGHTNING, CAPACITOR, CHARGE_UP, POWER_PLANT, STRIKE_TWICE,
+  LIGHTNING, CAPACITOR, POWER_PLANT, STRIKE_TWICE,
 ];

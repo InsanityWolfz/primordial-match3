@@ -119,7 +119,7 @@ export const CASCADE: PowerUpDefinition = {
 };
 
 // ─── MONSOON (passive) ───
-// Chance to refund Water Gun charge
+// Chance to refund Water Gun charge on use
 const monsoonLevels = generatePassive5Levels(
   [
     { refundChance: 10 },
@@ -147,40 +147,6 @@ export const MONSOON: PowerUpDefinition = {
   levels: monsoonLevels,
 };
 
-// ─── WELLSPRING (passivePower) ───
-// Matching exactly 3 water gems has a chance to refund 1 Water Gun charge
-// Lv1: 10% → Lv5: 20% → Lv10: 30% → Lv15: 40% → Lv20: 50%
-const wellspringLevels = generatePower20Levels(
-  [
-    { triggerChance: 10 },
-    { triggerChance: 20 },
-    { triggerChance: 30 },
-    { triggerChance: 40 },
-    { triggerChance: 50 },
-  ],
-  [
-    'Matching 3 water gems: 10% chance to refund 1 Water Gun charge',
-    'Matching 3 water gems: 20% chance to refund 1 Water Gun charge',
-    'Matching 3 water gems: 30% chance to refund 1 Water Gun charge',
-    'Matching 3 water gems: 40% chance to refund 1 Water Gun charge',
-    'Matching 3 water gems: 50% chance to refund 1 Water Gun charge',
-  ],
-  undefined, undefined,
-  (p) => `Matching 3 water gems: ${p.triggerChance}% chance to refund 1 Water Gun charge`,
-);
-
-export const WELLSPRING: PowerUpDefinition = {
-  id: 'wellspring',
-  name: 'Wellspring',
-  element: 'water',
-  category: 'passive',
-  maxLevel: 20,
-  requires: 'watergun',
-  levels: wellspringLevels,
-  milestones: POWER_MILESTONES,
-};
-
 export const WATER_POWERS: PowerUpDefinition[] = [
-  WATER_GUN, SPLASH, WELLSPRING, PIRATE, MONSOON,
-  // CASCADE removed from shop — cascade essence is now a built-in mechanic
+  WATER_GUN, SPLASH, PIRATE, MONSOON,
 ];

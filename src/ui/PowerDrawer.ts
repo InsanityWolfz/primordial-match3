@@ -11,6 +11,7 @@ const CARD_H        = 100;
 const CARD_GAP      = 6;
 const H_PAD         = 12;
 const HEADER_H      = 58;
+const CARD_START_Y  = HEADER_H + 6;
 
 // Button dimensions (container-local)
 const BTN_W = 135;
@@ -18,8 +19,8 @@ const BTN_H = 32;
 
 interface BtnBounds {
   id: string;
-  x: number;   // container-local X
-  y: number;   // container-local Y
+  x: number;   // cardContainer-local X
+  y: number;   // cardContainer-local Y
   w: number;
   h: number;
 }
@@ -41,13 +42,25 @@ export class PowerDrawer {
   private options: PowerDrawerOptions;
 
   private container: Phaser.GameObjects.Container | null = null;
+  private cardContainer: Phaser.GameObjects.Container | null = null;
   private overlay: Phaser.GameObjects.Graphics | null = null;
   private blockerZone: Phaser.GameObjects.Zone | null = null;
-  private inputHandler: ((ptr: Phaser.Input.Pointer) => void) | null = null;
+  private maskGraphics: Phaser.GameObjects.Graphics | null = null;
 
-  // Button bounds stored in container-local coords for hit-testing
+  private inputHandler: ((ptr: Phaser.Input.Pointer) => void) | null = null;
+  private moveHandler:  ((ptr: Phaser.Input.Pointer) => void) | null = null;
+  private upHandler:    (() => void) | null = null;
+
+  // Button bounds stored in cardContainer-local coords for hit-testing
   private closeBtnBounds = { x: 0, y: 0, w: 0, h: 0 };
   private activateBtnBounds: BtnBounds[] = [];
+
+  // Scroll state
+  private scrollOffset   = 0;
+  private maxScrollOffset = 0;
+  private isDragging     = false;
+  private dragStartY     = 0;
+  private dragStartScroll = 0;
 
   private _isOpen = false;
   private _blockFirstEvent = false;
@@ -84,10 +97,10 @@ export class PowerDrawer {
     if (!this._isOpen) return;
     this._isOpen = false;
 
-    // Remove scene-level input handler and blocker immediately
-    this.removeInputHandler();
+    this.removeHandlers();
     this.blockerZone?.destroy();
     this.blockerZone = null;
+    this.resetCursor();
 
     if (this.container) {
       this.scene.tweens.add({
@@ -113,12 +126,13 @@ export class PowerDrawer {
   }
 
   destroy(): void {
-    this.removeInputHandler();
+    this.removeHandlers();
     this.destroyDrawer();
     this.blockerZone?.destroy();
     this.blockerZone = null;
     if (this.overlay) { this.overlay.destroy(); this.overlay = null; }
     this._isOpen = false;
+    this.resetCursor();
   }
 
   // ── BUILD ─────────────────────────────────────────────────────────────────
@@ -126,6 +140,7 @@ export class PowerDrawer {
   private buildDrawer(): void {
     const W = GAME_CONFIG.width;
     this.activateBtnBounds = [];
+    this.scrollOffset = 0;
 
     // Semi-transparent overlay (visual only, no input)
     this.overlay = this.scene.add.graphics();
@@ -135,13 +150,12 @@ export class PowerDrawer {
     this.overlay.setAlpha(0);
     this.scene.tweens.add({ targets: this.overlay, alpha: 1, duration: 200 });
 
-    // Full-screen input blocker — prevents gems/UI below from getting tap events
-    // Depth 90 puts it above everything in the game (gems ~0, HUD ~10-13, inventory ~50-57)
+    // Full-screen input blocker
     this.blockerZone = this.scene.add.zone(W / 2, GAME_CONFIG.height / 2, W, GAME_CONFIG.height);
     this.blockerZone.setInteractive();
     this.blockerZone.setDepth(90);
 
-    // Container for the drawer panel (starts below screen, tweens up)
+    // Container for the drawer panel
     this.container = this.scene.add.container(0, DRAWER_CLOSED_Y);
     this.container.setDepth(91);
 
@@ -152,12 +166,6 @@ export class PowerDrawer {
     drawerBg.lineStyle(2, 0x4444aa, 0.85);
     drawerBg.strokeRoundedRect(0, 0, W, DRAWER_H, { tl: 22, tr: 22, bl: 0, br: 0 });
     this.container.add(drawerBg);
-
-    // Drag handle
-    const handle = this.scene.add.graphics();
-    handle.fillStyle(0x444466, 0.85);
-    handle.fillRoundedRect(W / 2 - 32, 10, 64, 5, 3);
-    this.container.add(handle);
 
     // Title
     const title = this.scene.add.text(H_PAD + 4, 26, 'YOUR POWERS', {
@@ -188,7 +196,7 @@ export class PowerDrawer {
     divider.lineBetween(H_PAD, HEADER_H, W - H_PAD, HEADER_H);
     this.container.add(divider);
 
-    // ── Sort + render cards ──
+    // ── Sort cards ──
     const ELEMENT_ORDER = ['fire', 'water', 'air', 'earth', 'lightning', 'nature'];
     const CATEGORY_ORDER: Record<string, number> = { activePower: 0, passivePower: 1, passive: 2 };
     const sorted = [...this.ownedPowerUps].sort((a, b) => {
@@ -201,30 +209,46 @@ export class PowerDrawer {
       return (CATEGORY_ORDER[defA.category] ?? 99) - (CATEGORY_ORDER[defB.category] ?? 99);
     });
 
-    let cardY = HEADER_H + 6;
+    // Compute scroll limits
+    const totalCardsH = sorted.length * (CARD_H + CARD_GAP);
+    const visibleH    = DRAWER_H - CARD_START_Y;
+    this.maxScrollOffset = Math.max(0, totalCardsH - visibleH);
+
+    // Card sub-container (scrollable)
+    this.cardContainer = this.scene.add.container(0, CARD_START_Y);
+    this.container.add(this.cardContainer);
+
+    let cardY = 0;
     for (const owned of sorted) {
       this.renderCard(owned, H_PAD, cardY, W - H_PAD * 2, CARD_H);
       cardY += CARD_H + CARD_GAP;
     }
 
     if (sorted.length === 0) {
-      const empty = this.scene.add.text(W / 2, HEADER_H + 40, 'No powers yet', {
+      const empty = this.scene.add.text(W / 2, 40, 'No powers yet', {
         fontSize: '14px', color: '#555566', fontFamily: 'Arial', fontStyle: 'italic',
       });
       empty.setOrigin(0.5, 0);
-      this.container.add(empty);
+      this.cardContainer.add(empty);
     }
 
-    // Slide-in tween
+    // Slide-in tween — apply mask after tween so it's in world coords
     this.scene.tweens.add({
       targets: this.container,
       y: DRAWER_OPEN_Y,
       duration: 300,
       ease: 'Power2.Out',
+      onComplete: () => {
+        if (this.cardContainer) {
+          this.maskGraphics = this.scene.make.graphics({ add: false });
+          this.maskGraphics.fillRect(0, DRAWER_OPEN_Y + HEADER_H, W, DRAWER_H - HEADER_H);
+          this.cardContainer.setMask(this.maskGraphics.createGeometryMask());
+        }
+      },
     });
 
-    // Attach scene-level input handler
-    this.attachInputHandler();
+    // Attach scene-level input handlers
+    this.attachHandlers();
   }
 
   private renderCard(
@@ -232,7 +256,7 @@ export class PowerDrawer {
     x: number, y: number,
     w: number, h: number,
   ): void {
-    if (!this.container) return;
+    if (!this.cardContainer) return;
     const def = getPowerUpDef(owned.powerUpId);
     if (!def) return;
 
@@ -248,19 +272,19 @@ export class PowerDrawer {
     card.fillRoundedRect(x, y, w, h, 5);
     card.lineStyle(1.5, color, 0.38);
     card.strokeRoundedRect(x, y, w, h, 5);
-    this.container.add(card);
+    this.cardContainer.add(card);
 
     // Left accent strip
     const accent = this.scene.add.graphics();
     accent.fillStyle(color, 0.9);
     accent.fillRect(x, y + 4, 4, h - 8);
-    this.container.add(accent);
+    this.cardContainer.add(accent);
 
     // Name
     const nameT = this.scene.add.text(x + 12, y + 10, def.name, {
       fontSize: '15px', color: '#e8e8ff', fontFamily: 'Arial', fontStyle: 'bold',
     });
-    this.container.add(nameT);
+    this.cardContainer.add(nameT);
 
     // Level · Category
     const catLabel = isActive
@@ -269,7 +293,7 @@ export class PowerDrawer {
     const lvlT = this.scene.add.text(x + 12, y + 28, `Lv ${owned.level}  ·  ${catLabel}`, {
       fontSize: '11px', color: '#555588', fontFamily: 'Arial',
     });
-    this.container.add(lvlT);
+    this.cardContainer.add(lvlT);
 
     // Description
     const descRight = isActive ? w - 160 : w - 20;
@@ -278,11 +302,10 @@ export class PowerDrawer {
       fontSize: '12px', color: '#7777aa', fontFamily: 'Arial',
       wordWrap: { width: descRight },
     });
-    this.container.add(descT);
+    this.cardContainer.add(descT);
 
     // Active powers: charge pips + activate button
     if (isActive && owned.charges !== undefined && owned.maxCharges !== undefined) {
-      // Charge pips
       const maxPips = Math.min(owned.maxCharges, 8);
       const pipR    = 5;
       const pipGap  = 4;
@@ -299,7 +322,7 @@ export class PowerDrawer {
           pip.lineStyle(1, 0xffffff, 0.15);
           pip.strokeCircle(px + pipR, pipY + pipR, pipR);
         }
-        this.container.add(pip);
+        this.cardContainer.add(pip);
         px += pipR * 2 + pipGap;
       }
 
@@ -310,7 +333,7 @@ export class PowerDrawer {
         { fontSize: '9px', color: hasCharges ? '#ffdd88' : '#555566', fontFamily: 'Arial' },
       );
       chargeLbl.setOrigin(0.5, 0);
-      this.container.add(chargeLbl);
+      this.cardContainer.add(chargeLbl);
 
       // Activate button (visual only — hit-tested manually)
       const btnX = x + w - BTN_W - 6;
@@ -326,7 +349,7 @@ export class PowerDrawer {
       }
       btnBg.fillRoundedRect(btnX, btnY, BTN_W, BTN_H, 5);
       btnBg.strokeRoundedRect(btnX, btnY, BTN_W, BTN_H, 5);
-      this.container.add(btnBg);
+      this.cardContainer.add(btnBg);
 
       const colorHex = '#' + color.toString(16).padStart(6, '0');
       const btnLabel = hasCharges ? '▶  ACTIVATE' : 'NO CHARGES';
@@ -337,37 +360,69 @@ export class PowerDrawer {
         fontStyle: 'bold',
       });
       btnText.setOrigin(0.5, 0.5);
-      this.container.add(btnText);
+      this.cardContainer.add(btnText);
 
-      // Store bounds (container-local) for manual hit-testing
       if (hasCharges) {
-        this.activateBtnBounds.push({
-          id: owned.powerUpId,
-          x: btnX,
-          y: btnY,
-          w: BTN_W,
-          h: BTN_H,
-        });
+        this.activateBtnBounds.push({ id: owned.powerUpId, x: btnX, y: btnY, w: BTN_W, h: BTN_H });
       }
     }
   }
 
   // ── Input handling ────────────────────────────────────────────────────────
 
-  private attachInputHandler(): void {
-    this._blockFirstEvent = true;  // skip the tap that triggered open()
+  private attachHandlers(): void {
+    this._blockFirstEvent = true;
+
     this.inputHandler = (ptr: Phaser.Input.Pointer) => {
       if (this._blockFirstEvent) { this._blockFirstEvent = false; return; }
       this.handlePointerDown(ptr);
     };
+
+    this.moveHandler = (ptr: Phaser.Input.Pointer) => {
+      this.handlePointerMove(ptr);
+    };
+
+    this.upHandler = () => { this.isDragging = false; };
+
     this.scene.input.on('pointerdown', this.inputHandler);
+    this.scene.input.on('pointermove', this.moveHandler);
+    this.scene.input.on('pointerup',   this.upHandler);
   }
 
-  private removeInputHandler(): void {
-    if (this.inputHandler) {
-      this.scene.input.off('pointerdown', this.inputHandler);
-      this.inputHandler = null;
+  private removeHandlers(): void {
+    if (this.inputHandler) { this.scene.input.off('pointerdown', this.inputHandler); this.inputHandler = null; }
+    if (this.moveHandler)  { this.scene.input.off('pointermove', this.moveHandler);  this.moveHandler  = null; }
+    if (this.upHandler)    { this.scene.input.off('pointerup',   this.upHandler);    this.upHandler    = null; }
+    if (this.maskGraphics) { this.maskGraphics.destroy(); this.maskGraphics = null; }
+    this.isDragging = false;
+  }
+
+  private resetCursor(): void {
+    this.scene.input.manager.canvas.style.cursor = '';
+  }
+
+  private handlePointerMove(ptr: Phaser.Input.Pointer): void {
+    if (!this._isOpen || !this.container) return;
+
+    const containerY = this.container.y;
+    const canvas     = this.scene.input.manager.canvas;
+
+    // Cursor: pointer when over header strip or X button area
+    if (ptr.y >= containerY && ptr.y <= containerY + HEADER_H) {
+      canvas.style.cursor = 'pointer';
+    } else {
+      canvas.style.cursor = '';
     }
+
+    // Drag scroll
+    if (!this.isDragging || !this.cardContainer) return;
+    const delta = ptr.y - this.dragStartY;
+    this.scrollOffset = Phaser.Math.Clamp(
+      this.dragStartScroll - delta,
+      0,
+      this.maxScrollOffset,
+    );
+    this.cardContainer.setY(CARD_START_Y - this.scrollOffset);
   }
 
   private handlePointerDown(ptr: Phaser.Input.Pointer): void {
@@ -385,23 +440,29 @@ export class PowerDrawer {
     const lx = ptr.x;
     const ly = ptr.y - containerY;
 
-    // Close button
+    // Close button / header area
     const cb = this.closeBtnBounds;
     if (lx >= cb.x && lx <= cb.x + cb.w && ly >= cb.y && ly <= cb.y + cb.h) {
       this.close();
       return;
     }
 
-    // Activate buttons
+    // Activate buttons (cardContainer-local coords)
+    const cardLy = ly - CARD_START_Y + this.scrollOffset;
     for (const btn of this.activateBtnBounds) {
-      if (lx >= btn.x && lx <= btn.x + btn.w && ly >= btn.y && ly <= btn.y + btn.h) {
+      if (lx >= btn.x && lx <= btn.x + btn.w && cardLy >= btn.y && cardLy <= btn.y + btn.h) {
         this.close();
         this.options.onActivatePowerUp(btn.id);
         return;
       }
     }
 
-    // Tap elsewhere inside the drawer — consume (do nothing, just block game input)
+    // Start drag if in scrollable card area and content overflows
+    if (ly > HEADER_H && this.maxScrollOffset > 0) {
+      this.isDragging      = true;
+      this.dragStartY      = ptr.y;
+      this.dragStartScroll = this.scrollOffset;
+    }
   }
 
   // ── Cleanup ───────────────────────────────────────────────────────────────
@@ -410,6 +471,7 @@ export class PowerDrawer {
     if (this.container) {
       this.container.destroy(true);
       this.container = null;
+      this.cardContainer = null;
     }
     this.activateBtnBounds = [];
   }

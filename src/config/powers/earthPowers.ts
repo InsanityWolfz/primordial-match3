@@ -120,7 +120,7 @@ export const TECTONIC_PLATES: PowerUpDefinition = {
 };
 
 // ─── MONOLITH (passive) ───
-// Chance to refund Earthquake charge
+// Chance to refund Earthquake charge on use
 const monolithLevels = generatePassive5Levels(
   [
     { refundChance: 10 },
@@ -148,39 +148,6 @@ export const MONOLITH: PowerUpDefinition = {
   levels: monolithLevels,
 };
 
-// ─── TREMOR SENSE (passivePower) ───
-// Matching exactly 3 earth gems has a chance to refund 1 Earthquake charge
-// Lv1: 10% → Lv5: 20% → Lv10: 30% → Lv15: 40% → Lv20: 50%
-const tremorSenseLevels = generatePower20Levels(
-  [
-    { triggerChance: 10 },
-    { triggerChance: 20 },
-    { triggerChance: 30 },
-    { triggerChance: 40 },
-    { triggerChance: 50 },
-  ],
-  [
-    'Matching 3 earth gems: 10% chance to refund 1 Earthquake charge',
-    'Matching 3 earth gems: 20% chance to refund 1 Earthquake charge',
-    'Matching 3 earth gems: 30% chance to refund 1 Earthquake charge',
-    'Matching 3 earth gems: 40% chance to refund 1 Earthquake charge',
-    'Matching 3 earth gems: 50% chance to refund 1 Earthquake charge',
-  ],
-  undefined, undefined,
-  (p) => `Matching 3 earth gems: ${p.triggerChance}% chance to refund 1 Earthquake charge`,
-);
-
-export const TREMOR_SENSE: PowerUpDefinition = {
-  id: 'tremorSense',
-  name: 'Tremor Sense',
-  element: 'earth',
-  category: 'passive',
-  maxLevel: 20,
-  requires: 'earthquake',
-  levels: tremorSenseLevels,
-  milestones: POWER_MILESTONES,
-};
-
 export const EARTH_POWERS: PowerUpDefinition[] = [
-  EARTHQUAKE, STURDY, TREMOR_SENSE, GOLD_DIGGER, TECTONIC_PLATES, MONOLITH,
+  EARTHQUAKE, STURDY, GOLD_DIGGER, TECTONIC_PLATES, MONOLITH,
 ];

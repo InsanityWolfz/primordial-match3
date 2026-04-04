@@ -200,28 +200,22 @@ export class InventoryBar {
       isActiveTarget: false, hasCharges,
     });
 
-    // Tap zone (covers circle + label area below)
-    const zoneH  = CIRCLE_R * 2 + 70;
-    const zoneY  = cy + (zoneH / 2 - CIRCLE_R);
-    const zone   = this.scene.add.zone(cx, zoneY, slotW * 0.92, zoneH);
-    zone.setInteractive({ useHandCursor: true });
-    zone.setDepth(56);
-    this.elements.push(zone);
+    // Circle zone — activate only (no drawer on 0-charge click)
+    const circleZone = this.scene.add.zone(cx, cy, slotW * 0.92, CIRCLE_R * 2);
+    circleZone.setInteractive({ useHandCursor: hasCharges });
+    circleZone.setDepth(56);
+    this.elements.push(circleZone);
 
-    zone.on('pointerover', () => {
+    circleZone.on('pointerover', () => {
       const d = this.circleMap.get(owned.powerUpId);
       if (d && !d.isActiveTarget) this.paintCircle(d.bg, d.ring, d.cx, d.cy, d.color, false, true);
     });
-    zone.on('pointerout', () => {
+    circleZone.on('pointerout', () => {
       const d = this.circleMap.get(owned.powerUpId);
       if (d && !d.isActiveTarget) this.paintCircle(d.bg, d.ring, d.cx, d.cy, d.color, false, false);
     });
-    zone.on('pointerdown', () => {
-      if (hasCharges) {
-        this.options.onActivatePowerUp?.(owned.powerUpId);
-      } else {
-        this.options.onOpenDrawer?.();
-      }
+    circleZone.on('pointerdown', () => {
+      if (hasCharges) this.options.onActivatePowerUp?.(owned.powerUpId);
     });
   }
 
@@ -255,6 +249,13 @@ export class InventoryBar {
       });
       lvT.setOrigin(0.5, 0).setDepth(52);
       this.elements.push(lvT);
+
+      // Label tap zone — opens drawer
+      const labelZone = this.scene.add.zone(cx, startY + 25, slotW * 0.9, 50);
+      labelZone.setInteractive({ useHandCursor: true });
+      labelZone.setDepth(56);
+      labelZone.on('pointerdown', () => this.options.onOpenDrawer?.());
+      this.elements.push(labelZone);
 
       // Charge pips
       const pipY = startY + 28;

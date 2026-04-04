@@ -77,7 +77,7 @@ export class PassiveManager {
 
   /**
    * Called when damage is about to be dealt. Returns whether to refund a charge.
-   * Refund passives give a chance to refund the active power charge.
+   * Refund passives give a chance to refund the active power charge on use.
    */
   onDamageDealt(
     damageElement: string | null,
@@ -89,13 +89,13 @@ export class PassiveManager {
 
     if (!damageElement) return { modifiedDamage, refundCharge };
 
-    // Refund passives: chance to refund the active power charge
+    // Refund passives: chance to refund the active power charge on use
     if (activePowerId) {
       const refundPassiveMap: Record<string, string> = {
-        fireball: 'meteorShower',
-        watergun: 'monsoon',
-        gust: 'windstorm',
-        earthquake: 'monolith',
+        fireball:    'meteorShower',
+        watergun:    'monsoon',
+        gust:        'windstorm',
+        earthquake:  'monolith',
         chainstrike: 'strikeTwice',
       };
 
@@ -117,10 +117,8 @@ export class PassiveManager {
   /**
    * Called when a match is completed. Returns bonus essence.
    * Wild Growth: flat bonus essence per match.
-   * Elemental Resonance (Kindling/Wellspring/etc.): exactly-3 gem matches of
-   * the power's element have a chance to refund 1 charge of that element's active power.
    */
-  onMatchCompleted(matchElement: string, matchLength: number): { bonusEssence: number; bonusScore: number } {
+  onMatchCompleted(_matchElement: string, _matchLength: number): { bonusEssence: number; bonusScore: number } {
     const result = { bonusEssence: 0, bonusScore: 0 };
 
     // Wild Growth: flat bonus essence per match
@@ -128,32 +126,6 @@ export class PassiveManager {
     if (wildGrowthParams && wildGrowthParams.bonusEssence) {
       result.bonusEssence += wildGrowthParams.bonusEssence;
       this.onFlashCard?.('wildGrowth');
-    }
-
-    // Elemental Resonance: only triggers on exactly 3-gem matches
-    if (matchLength === 3 && matchElement) {
-      const resonanceMap: Record<string, { passiveId: string; activePowerId: string }> = {
-        fire:      { passiveId: 'kindling',    activePowerId: 'fireball'    },
-        water:     { passiveId: 'wellspring',  activePowerId: 'watergun'    },
-        earth:     { passiveId: 'tremorSense', activePowerId: 'earthquake'  },
-        air:       { passiveId: 'updraft',     activePowerId: 'gust'        },
-        lightning: { passiveId: 'chargeUp',    activePowerId: 'chainstrike' },
-        nature:    { passiveId: 'overgrowth',  activePowerId: 'transmute'   },
-      };
-
-      const resonance = resonanceMap[matchElement];
-      if (resonance) {
-        const params = this.getPassiveParams(resonance.passiveId);
-        if (params && params.triggerChance) {
-          if (Math.random() * 100 < params.triggerChance) {
-            const activeOwned = this.ctx.ownedPowerUps.find(p => p.powerUpId === resonance.activePowerId);
-            if (activeOwned && activeOwned.charges < activeOwned.maxCharges) {
-              activeOwned.charges += 1;
-              this.onFlashCard?.(resonance.passiveId); // only flash when a charge is actually restored
-            }
-          }
-        }
-      }
     }
 
     return result;

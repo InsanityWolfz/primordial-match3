@@ -121,7 +121,7 @@ export const WIND_WALKER: PowerUpDefinition = {
 };
 
 // ─── WINDSTORM (passive) ───
-// Chance to refund Gust charge
+// Chance to refund Gust charge on use
 const windstormLevels = generatePassive5Levels(
   [
     { refundChance: 10 },
@@ -149,39 +149,6 @@ export const WINDSTORM: PowerUpDefinition = {
   levels: windstormLevels,
 };
 
-// ─── UPDRAFT (passivePower) ───
-// Matching exactly 3 air gems has a chance to refund 1 Gust charge
-// Lv1: 10% → Lv5: 20% → Lv10: 30% → Lv15: 40% → Lv20: 50%
-const updraftLevels = generatePower20Levels(
-  [
-    { triggerChance: 10 },
-    { triggerChance: 20 },
-    { triggerChance: 30 },
-    { triggerChance: 40 },
-    { triggerChance: 50 },
-  ],
-  [
-    'Matching 3 air gems: 10% chance to refund 1 Gust charge',
-    'Matching 3 air gems: 20% chance to refund 1 Gust charge',
-    'Matching 3 air gems: 30% chance to refund 1 Gust charge',
-    'Matching 3 air gems: 40% chance to refund 1 Gust charge',
-    'Matching 3 air gems: 50% chance to refund 1 Gust charge',
-  ],
-  undefined, undefined,
-  (p) => `Matching 3 air gems: ${p.triggerChance}% chance to refund 1 Gust charge`,
-);
-
-export const UPDRAFT: PowerUpDefinition = {
-  id: 'updraft',
-  name: 'Updraft',
-  element: 'air',
-  category: 'passive',
-  maxLevel: 20,
-  requires: 'gust',
-  levels: updraftLevels,
-  milestones: POWER_MILESTONES,
-};
-
 export const AIR_POWERS: PowerUpDefinition[] = [
-  GUST, WINDSLASH, UPDRAFT, SKYBOUND, WIND_WALKER, WINDSTORM,
+  GUST, WINDSLASH, SKYBOUND, WIND_WALKER, WINDSTORM,
 ];

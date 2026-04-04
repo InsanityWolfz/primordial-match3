@@ -115,6 +115,11 @@ export class GameScene extends Phaser.Scene implements GameContext {
 
     if (!modifier) return;
 
+    // Show modifier name just below the HUD white line, under the ROUND display
+    this.add.text(75, 82, modifier.name, {
+      fontSize: '9px', color: '#cc9944', fontFamily: 'Arial', fontStyle: 'bold',
+    }).setOrigin(0.5, 0).setDepth(11);
+
     switch (modifier.id) {
       case 'rush':
         this.turnsRemaining = 10;
@@ -331,11 +336,8 @@ export class GameScene extends Phaser.Scene implements GameContext {
     });
   }
 
-  /**
-   * Brief white camera flash — called after a power-up activates.
-   */
   flashPowerActivation(): void {
-    this.cameras.main.flash(180, 255, 255, 255, false);
+    // flash removed
   }
 
   updateEnemyDisplay(): void {
@@ -501,6 +503,15 @@ export class GameScene extends Phaser.Scene implements GameContext {
     this.essenceBreakdownFormula = this.add.text(cx, y + 20, '0 gems', { fontSize: '11px', color: '#aabbff', fontFamily: 'Arial', fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(11);
   }
 
+  // Bonus essence for turns the player didn't need after clearing enemies.
+  // Based on the current gems-per-turn rate projected over remaining turns.
+  private calcTurnBonus(): number {
+    const turnsUsed = GAME_CONFIG.turnsPerRound - this.turnsRemaining;
+    if (turnsUsed <= 0 || this.turnsRemaining <= 0) return 0;
+    const gemsPerTurn = this.roundGemsDestroyed / turnsUsed;
+    return Math.floor(gemsPerTurn * this.turnsRemaining * this.calcEssenceMultiplier() * this.essenceMultiplier);
+  }
+
   // +8% per match-3 / +20% per match-4 / +50% per match-5 (additive, no runaway stacking)
   private calcEssenceMultiplier(): number {
     return 1
@@ -513,9 +524,11 @@ export class GameScene extends Phaser.Scene implements GameContext {
     if (!this.essenceBreakdownFormula) return;
     const mult    = this.calcEssenceMultiplier();
     const preview = Math.floor(this.roundGemsDestroyed * mult);
-    this.essenceBreakdownFormula.setText(
-      `${this.roundGemsDestroyed} gems × ${mult.toFixed(2)}× = ${preview}`,
-    );
+    const parts   = [`${this.roundGemsDestroyed}g`];
+    if (this.roundMatch3Count > 0) parts.push(`${this.roundMatch3Count}m3×.08`);
+    if (this.roundMatch4Count > 0) parts.push(`${this.roundMatch4Count}m4×.20`);
+    if (this.roundMatch5Count > 0) parts.push(`${this.roundMatch5Count}m5×.50`);
+    this.essenceBreakdownFormula.setText(parts.join(' × ') + ` = ${preview}`);
   }
 
   private drawShopButtonBg(active: boolean): void {
@@ -537,9 +550,13 @@ export class GameScene extends Phaser.Scene implements GameContext {
     if (!this.shopButtonBg) return;
     const enemiesDead = this.enemyManager?.allEnemiesDead() ?? false;
     if (enemiesDead) {
+      const turnBonus = this.calcTurnBonus();
+      const subText = turnBonus > 0
+        ? `+${turnBonus} ess for ${this.turnsRemaining} turns`
+        : 'Enemies Cleared!';
       this.drawShopButtonBg(true);
       this.shopButtonLabel.setColor('#44cc88');
-      this.shopButtonSub.setText('Enemies Cleared!').setColor('#aaffcc');
+      this.shopButtonSub.setText(subText).setColor('#aaffcc');
       this.shopButtonZone.setInteractive({ useHandCursor: true });
     } else {
       this.drawShopButtonBg(false);
@@ -678,9 +695,10 @@ export class GameScene extends Phaser.Scene implements GameContext {
 
     const success = this.enemyManager.allEnemiesDead();
     const essenceEarned = success ? Math.floor(this.roundGemsDestroyed * this.calcEssenceMultiplier() * this.essenceMultiplier) : 0;
+    const turnBonus = success ? this.calcTurnBonus() : 0;
 
     if (success) {
-      this.essence += essenceEarned;
+      this.essence += essenceEarned + turnBonus;
       this.updateEssenceDisplay();
     }
 

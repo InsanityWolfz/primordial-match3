@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_CONFIG } from '../config/gameConfig.ts';
 import type { EnemyTrait } from '../config/enemyTraits.ts';
-import { TRAIT_BADGE_COLOR, TRAIT_BADGE_USED_COLOR } from '../config/enemyTraits.ts';
 
 // Element name → color map for warded badge
 const ELEMENT_COLORS: Record<string, number> = {
@@ -37,7 +36,8 @@ export class Enemy {
   private body: Phaser.GameObjects.Graphics;
   private hpBarBg: Phaser.GameObjects.Graphics;
   private hpBarFill: Phaser.GameObjects.Graphics;
-  private badgeGraphic?: Phaser.GameObjects.Graphics;
+  private badgeText?: Phaser.GameObjects.Text;
+  private hpText!: Phaser.GameObjects.Text;
 
   // World pixel coords (top-left of enemy rectangle)
   readonly worldX: number;
@@ -88,6 +88,21 @@ export class Enemy {
     // HP bar fill (starts full)
     this.hpBarFill = scene.add.graphics();
     this.hpBarFill.setDepth(6);
+
+    // HP text centered on enemy
+    const cx = this.worldX + this.worldW / 2;
+    const cy = this.worldY + this.worldH / 2;
+    this.hpText = scene.add.text(cx, cy, `${this.hp}/${this.maxHp}`, {
+      fontSize: '11px',
+      fontFamily: 'monospace',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 3,
+      align: 'center',
+    });
+    this.hpText.setOrigin(0.5, 0.5);
+    this.hpText.setDepth(7);
+
     this.drawHpBar();
   }
 
@@ -108,28 +123,37 @@ export class Enemy {
   private drawBadge(): void {
     if (!this.trait) return;
 
-    // Destroy existing badge if redrawing
-    this.badgeGraphic?.destroy();
-    this.badgeGraphic = this.scene.add.graphics();
-    this.badgeGraphic.setDepth(7);
+    this.badgeText?.destroy();
 
-    const bx = this.worldX + this.worldW - 10;
-    const by = this.worldY + 10;
-    const r = 8;
+    const cx = this.worldX + this.worldW / 2;
+    const cy = this.worldY + this.worldH / 2;
 
-    // Determine badge color
-    let color = TRAIT_BADGE_COLOR[this.trait];
-    if (this.trait === 'shielded' && !this.shieldActive) {
-      color = TRAIT_BADGE_USED_COLOR['shielded'];
-    }
+    let label: string = this.trait;
+    let color = '#ffffff';
+
     if (this.trait === 'warded' && this.wardedElement) {
-      color = ELEMENT_COLORS[this.wardedElement] ?? TRAIT_BADGE_COLOR['warded'];
+      label = `warded\n${this.wardedElement}`;
+      const elemColor = ELEMENT_COLORS[this.wardedElement];
+      if (elemColor !== undefined) {
+        color = '#' + elemColor.toString(16).padStart(6, '0');
+      }
+    } else if (this.trait === 'shielded' && !this.shieldActive) {
+      color = '#888888';
     }
 
-    this.badgeGraphic.fillStyle(color, 0.95);
-    this.badgeGraphic.fillCircle(bx, by, r);
-    this.badgeGraphic.lineStyle(1, 0xffffff, 0.6);
-    this.badgeGraphic.strokeCircle(bx, by, r);
+    // Shift HP text up to make room for the trait label below
+    this.hpText.setY(cy - 9);
+
+    this.badgeText = this.scene.add.text(cx, cy + 9, label, {
+      fontSize: '11px',
+      fontFamily: 'monospace',
+      color,
+      stroke: '#000000',
+      strokeThickness: 3,
+      align: 'center',
+    });
+    this.badgeText.setOrigin(0.5, 0.5);
+    this.badgeText.setDepth(7);
   }
 
   // ──────────────── DAMAGE / HEAL ────────────────
@@ -215,6 +239,8 @@ export class Enemy {
 
     this.hpBarFill.fillStyle(barColor, 1);
     this.hpBarFill.fillRect(this.worldX, barY, this.worldW * ratio, barH);
+
+    if (this.hpText) this.hpText.setText(`${this.hp}/${this.maxHp}`);
   }
 
   // ──────────────── ANIMATIONS ────────────────
@@ -223,8 +249,8 @@ export class Enemy {
    * Play a death animation and resolve when done.
    */
   playDeathAnimation(scene: Phaser.Scene): Promise<void> {
-    const targets = [this.body, this.hpBarBg, this.hpBarFill];
-    if (this.badgeGraphic) targets.push(this.badgeGraphic);
+    const targets: Phaser.GameObjects.GameObject[] = [this.body, this.hpBarBg, this.hpBarFill, this.hpText];
+    if (this.badgeText) targets.push(this.badgeText);
     return new Promise(resolve => {
       scene.tweens.add({
         targets,
@@ -245,6 +271,7 @@ export class Enemy {
     this.body.destroy();
     this.hpBarBg.destroy();
     this.hpBarFill.destroy();
-    this.badgeGraphic?.destroy();
+    this.hpText.destroy();
+    this.badgeText?.destroy();
   }
 }

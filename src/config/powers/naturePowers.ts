@@ -90,39 +90,6 @@ export const PHOTOSYNTHESIS: PowerUpDefinition = {
   levels: photosynthesisLevels,
 };
 
-// ─── OVERGROWTH (passivePower) ───
-// Matching exactly 3 nature gems has a chance to refund 1 Transmute charge
-// Lv1: 10% → Lv5: 20% → Lv10: 30% → Lv15: 40% → Lv20: 50%
-const overgrowthLevels = generatePower20Levels(
-  [
-    { triggerChance: 10 },
-    { triggerChance: 20 },
-    { triggerChance: 30 },
-    { triggerChance: 40 },
-    { triggerChance: 50 },
-  ],
-  [
-    'Matching 3 nature gems: 10% chance to refund 1 Transmute charge',
-    'Matching 3 nature gems: 20% chance to refund 1 Transmute charge',
-    'Matching 3 nature gems: 30% chance to refund 1 Transmute charge',
-    'Matching 3 nature gems: 40% chance to refund 1 Transmute charge',
-    'Matching 3 nature gems: 50% chance to refund 1 Transmute charge',
-  ],
-  undefined, undefined,
-  (p) => `Matching 3 nature gems: ${p.triggerChance}% chance to refund 1 Transmute charge`,
-);
-
-export const OVERGROWTH: PowerUpDefinition = {
-  id: 'overgrowth',
-  name: 'Overgrowth',
-  element: 'nature',
-  category: 'passive',
-  maxLevel: 20,
-  requires: 'transmute',
-  levels: overgrowthLevels,
-  milestones: POWER_MILESTONES,
-};
-
 export const NATURE_POWERS: PowerUpDefinition[] = [
-  TRANSMUTE, WILD_GROWTH, OVERGROWTH, PHOTOSYNTHESIS,
+  TRANSMUTE, WILD_GROWTH, PHOTOSYNTHESIS,
 ];

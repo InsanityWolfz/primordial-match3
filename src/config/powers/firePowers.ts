@@ -125,39 +125,6 @@ export const METEOR_SHOWER: PowerUpDefinition = {
   levels: meteorShowerLevels,
 };
 
-// ─── KINDLING (passivePower) ───
-// Matching exactly 3 fire gems has a chance to refund 1 Fireball charge
-// Lv1: 10% → Lv5: 20% → Lv10: 30% → Lv15: 40% → Lv20: 50%
-const kindlingLevels = generatePower20Levels(
-  [
-    { triggerChance: 10 },
-    { triggerChance: 20 },
-    { triggerChance: 30 },
-    { triggerChance: 40 },
-    { triggerChance: 50 },
-  ],
-  [
-    'Matching 3 fire gems: 10% chance to refund 1 Fireball charge',
-    'Matching 3 fire gems: 20% chance to refund 1 Fireball charge',
-    'Matching 3 fire gems: 30% chance to refund 1 Fireball charge',
-    'Matching 3 fire gems: 40% chance to refund 1 Fireball charge',
-    'Matching 3 fire gems: 50% chance to refund 1 Fireball charge',
-  ],
-  undefined, undefined,
-  (p) => `Matching 3 fire gems: ${p.triggerChance}% chance to refund 1 Fireball charge`,
-);
-
-export const KINDLING: PowerUpDefinition = {
-  id: 'kindling',
-  name: 'Kindling',
-  element: 'fire',
-  category: 'passive',
-  maxLevel: 20,
-  requires: 'fireball',
-  levels: kindlingLevels,
-  milestones: POWER_MILESTONES,
-};
-
 export const FIRE_POWERS: PowerUpDefinition[] = [
-  FIREBALL, COMBUSTION, KINDLING, ARSONIST, METEOR_SHOWER,
+  FIREBALL, COMBUSTION, ARSONIST, METEOR_SHOWER,
 ];
