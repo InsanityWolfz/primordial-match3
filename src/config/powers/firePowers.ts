@@ -2,22 +2,22 @@ import type { PowerUpDefinition } from '../powerUpConfig.ts';
 import { generatePower20Levels, generatePassive5Levels, POWER_MILESTONES } from '../powerUpConfig.ts';
 
 // ─── FIREBALL (activePower) ───
-// Area blast around target. Radius and damage scale with level.
-// Lv1: 3x3/1dmg → Lv5: 4x4/5dmg → Lv10: 5x5/10dmg → Lv15: 6x6/15dmg → Lv20: whole board/20dmg
+// Area blast around target. Radius scales with level; damage grows slowly.
+// Lv1: 3x3/1dmg → Lv5: 5x5/1dmg → Lv10: 5x5/2dmg → Lv15: 7x7/2dmg → Lv20: whole board/3dmg
 const fireballLevels = generatePower20Levels(
   [
     { radius: 1, damage: 1 },    // Lv1: 3x3
-    { radius: 2, damage: 5 },    // Lv5: 5x5
-    { radius: 2, damage: 10 },   // Lv10: 5x5
-    { radius: 3, damage: 15 },   // Lv15: 7x7
-    { radius: 4, damage: 20 },   // Lv20: whole board
+    { radius: 2, damage: 1 },    // Lv5: 5x5
+    { radius: 2, damage: 2 },    // Lv10: 5x5
+    { radius: 3, damage: 2 },    // Lv15: 7x7
+    { radius: 4, damage: 3 },    // Lv20: whole board
   ],
   [
-    '3x3 area, 1 damage',
-    '5x5 area, 5 damage',
-    '5x5 area, 10 damage',
-    '7x7 area, 15 damage',
-    'Whole board, 20 damage',
+    '3x3 area, 1 damage per tile',
+    '5x5 area, 1 damage per tile',
+    '5x5 area, 2 damage per tile',
+    '7x7 area, 2 damage per tile',
+    'Whole board, 3 damage per tile',
   ],
   [2, 2, 3, 3, 4],  // charges
 );
@@ -35,21 +35,21 @@ export const FIREBALL: PowerUpDefinition = {
 
 // ─── COMBUSTION (passivePower) ───
 // On hazard destroy → spawn random explosions
-// Lv1: 3x 1x1/1dmg → Lv5: 6x 1x1/5dmg → Lv10: 6x 2x2/10dmg → Lv15: 9x 2x2/15dmg → Lv20: 9x 3x3/20dmg
+// Lv1: 3x 1x1/1dmg → Lv5: 6x 1x1/1dmg → Lv10: 6x 3x3/1dmg → Lv15: 9x 3x3/2dmg → Lv20: 9x 3x3/2dmg
 const combustionLevels = generatePower20Levels(
   [
     { explosionCount: 3, explosionRadius: 0, damage: 1 },
-    { explosionCount: 6, explosionRadius: 0, damage: 5 },
-    { explosionCount: 6, explosionRadius: 1, damage: 10 },
-    { explosionCount: 9, explosionRadius: 1, damage: 15 },
-    { explosionCount: 9, explosionRadius: 1, damage: 20 },
+    { explosionCount: 6, explosionRadius: 0, damage: 1 },
+    { explosionCount: 6, explosionRadius: 1, damage: 1 },
+    { explosionCount: 9, explosionRadius: 1, damage: 2 },
+    { explosionCount: 9, explosionRadius: 1, damage: 2 },
   ],
   [
     'On hazard destroy: 3 explosions nearby, 1 damage each',
-    'On hazard destroy: 6 explosions nearby, 5 damage each',
-    'On hazard destroy: 6 area explosions (3x3), 10 damage each',
-    'On hazard destroy: 9 area explosions (3x3), 15 damage each',
-    'On hazard destroy: 9 area explosions (3x3), 20 damage each',
+    'On hazard destroy: 6 explosions nearby, 1 damage each',
+    'On hazard destroy: 6 area explosions (3x3), 1 damage each',
+    'On hazard destroy: 9 area explosions (3x3), 2 damage each',
+    'On hazard destroy: 9 area explosions (3x3), 2 damage each',
   ],
   undefined, undefined,
   (p) => {

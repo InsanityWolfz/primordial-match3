@@ -11,8 +11,7 @@ import { LightningPowerExecutor } from './powers/LightningPowerExecutor.ts';
 
 /**
  * PowerUpExecutor: thin dispatcher that delegates to per-element executors.
- * Handles charge consumption, targeting flow, and round-end checks.
- * All execution logic lives in the element-specific executors.
+ * Powers do NOT cost turns — only successful matches cost turns.
  */
 export class PowerUpExecutor {
   private ctx: GameContext;
@@ -21,9 +20,7 @@ export class PowerUpExecutor {
   private endRound: () => Promise<void>;
   private onActionComplete: () => void;
   private onFlashCard: (id: string) => void;
-  private onPowerTurnConsumed: () => void;
 
-  // Element executors (initialized via setDamageSystem)
   private fireExecutor!: FirePowerExecutor;
   private waterExecutor!: WaterPowerExecutor;
   private airExecutor!: AirPowerExecutor;
@@ -40,7 +37,6 @@ export class PowerUpExecutor {
       endRound: () => Promise<void>;
       onActionComplete: () => void;
       onFlashCard: (id: string) => void;
-      onPowerTurnConsumed: () => void;
     },
   ) {
     this.ctx = ctx;
@@ -49,12 +45,8 @@ export class PowerUpExecutor {
     this.endRound = callbacks.endRound;
     this.onActionComplete = callbacks.onActionComplete;
     this.onFlashCard = callbacks.onFlashCard;
-    this.onPowerTurnConsumed = callbacks.onPowerTurnConsumed;
   }
 
-  /**
-   * Late-init: create all element executors once DamageSystem and PassiveManager are available.
-   */
   initExecutors(
     cascadeSystem: CascadeSystem,
     damageSystem: DamageSystem,
@@ -80,13 +72,11 @@ export class PowerUpExecutor {
     }
 
     owned.charges--;
-    this.updateHudCharges(); // show charge removal immediately
+    this.updateHudCharges();
     this.onFlashCard(id);
-    // All non-Transmute active powers cost a turn
-    this.ctx.turnsRemaining--;
-    this.onPowerTurnConsumed();
     this.cancelTargeting();
 
+    // Powers do NOT cost turns
     switch (id) {
       case 'earthquake':
         await this.earthExecutor.executeEarthquake(owned.level);
@@ -98,11 +88,13 @@ export class PowerUpExecutor {
         await this.waterExecutor.executeWaterGun(owned.level);
         break;
     }
+
     this.onActionComplete();
     this.ctx.isSwapping = false;
 
+    // Check lose condition: turns exhausted AND no charges left
     if (this.ctx.turnsRemaining <= 0) {
-      await this.endRound();
+      await this.checkEndCondition();
     }
   }
 
@@ -117,25 +109,22 @@ export class PowerUpExecutor {
 
     this.cancelTargeting();
 
-    // Transmute has a 2-step UI (gem click → color picker) that can be cancelled
     if (id === 'transmute') {
       const confirmed = await this.natureExecutor.executeTransmute(owned.level, row, col);
       if (!confirmed) {
-        // Player cancelled the element picker — refund and reset
         this.updateHudCharges();
         this.ctx.isSwapping = false;
         return;
       }
       owned.charges--;
-      this.updateHudCharges(); // show charge removal immediately
+      this.updateHudCharges();
       this.onFlashCard(id);
     } else {
       owned.charges--;
-      this.updateHudCharges(); // show charge removal immediately
+      this.updateHudCharges();
       this.onFlashCard(id);
-      // Non-Transmute targeted powers cost a turn
-      this.ctx.turnsRemaining--;
-      this.onPowerTurnConsumed();
+
+      // Powers do NOT cost turns
       switch (id) {
         case 'fireball':
           await this.fireExecutor.executeFireball(owned.level, row, col);
@@ -145,36 +134,42 @@ export class PowerUpExecutor {
           break;
       }
     }
+
     this.onActionComplete();
     this.ctx.isSwapping = false;
 
+    // Check lose condition after every power use
     if (this.ctx.turnsRemaining <= 0) {
+      await this.checkEndCondition();
+    }
+  }
+
+  /**
+   * After turns hit 0, check if the player can still act.
+   * Lose if turns = 0 AND no power charges remain.
+   * If all enemies are dead, go to shop regardless.
+   */
+  private async checkEndCondition(): Promise<void> {
+    if (this.ctx.enemyManager.allEnemiesDead()) {
+      await this.endRound();
+      return;
+    }
+
+    const hasCharges = this.ctx.ownedPowerUps.some(p => p.charges > 0);
+    if (!hasCharges) {
       await this.endRound();
     }
+    // Otherwise: turns = 0 but has charges — keep playing
   }
 
   // ──────────────── PASSIVE POWER TRIGGERS ────────────────
 
-  /**
-   * Called after every match cascade step.
-   * Triggers all passive powers that fire on match.
-   * matchPositions: the gems that were just matched (used by Capacitor for adjacent targeting).
-   */
   async executePostMatchPassives(matchPositions: { row: number; col: number }[] = []): Promise<void> {
-    // Splash (water passive power)
     if (await this.waterExecutor.executeSplashPassive()) this.onFlashCard('splash');
-
-    // Windslash (air passive power) — chance-based, only flashes when it triggers
     if (await this.airExecutor.executeWindslashPassive()) this.onFlashCard('windslash');
-
-    // Capacitor (lightning passive power) — chains adjacent to matched gems
     if (await this.lightningExecutor.executeCapacitorPassive(matchPositions)) this.onFlashCard('capacitor');
   }
 
-  /**
-   * Legacy method for backward compat with CascadeSystem.
-   * Now delegates to executePostMatchPassives.
-   */
   async executeSplashPassive(matchPositions: { row: number; col: number }[] = []): Promise<void> {
     await this.executePostMatchPassives(matchPositions);
   }

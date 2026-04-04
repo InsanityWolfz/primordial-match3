@@ -3,21 +3,21 @@ import { generatePower20Levels, generatePassive5Levels, POWER_MILESTONES } from 
 
 // ─── WATER GUN (activePower) ───
 // Hit random gems for damage
-// Lv1: 9/1dmg → Lv5: 16/5dmg → Lv10: 25/10dmg → Lv15: 40/15dmg → Lv20: whole board/20dmg
+// Lv1: 9/1dmg → Lv5: 16/1dmg → Lv10: 25/2dmg → Lv15: 40/2dmg → Lv20: whole board/3dmg
 const waterGunLevels = generatePower20Levels(
   [
-    { targetCount: 9, damage: 1 },
-    { targetCount: 16, damage: 5 },
-    { targetCount: 25, damage: 10 },
-    { targetCount: 40, damage: 15 },
-    { targetCount: 64, damage: 20 },
+    { targetCount: 9,  damage: 1 },
+    { targetCount: 16, damage: 1 },
+    { targetCount: 25, damage: 2 },
+    { targetCount: 40, damage: 2 },
+    { targetCount: 64, damage: 3 },
   ],
   [
-    'Hit 9 random gems, 1 damage',
-    'Hit 16 random gems, 5 damage',
-    'Hit 25 random gems, 10 damage',
-    'Hit 40 random gems, 15 damage',
-    'Hit entire board, 20 damage',
+    'Hit 9 random tiles, 1 damage each',
+    'Hit 16 random tiles, 1 damage each',
+    'Hit 25 random tiles, 2 damage each',
+    'Hit 40 random tiles, 2 damage each',
+    'Hit entire board, 3 damage each',
   ],
   [2, 2, 3, 3, 4],
 );
@@ -34,21 +34,21 @@ export const WATER_GUN: PowerUpDefinition = {
 
 // ─── SPLASH (passivePower) ───
 // After match, hit random gems for damage
-// Lv1: 1/1dmg → Lv5: 2/5dmg → Lv10: 3/10dmg → Lv15: 4/15dmg → Lv20: 5/20dmg
+// Lv1: 1/1dmg → Lv5: 2/1dmg → Lv10: 3/1dmg → Lv15: 4/2dmg → Lv20: 5/2dmg
 const splashLevels = generatePower20Levels(
   [
     { targetCount: 1, damage: 1 },
-    { targetCount: 2, damage: 5 },
-    { targetCount: 3, damage: 10 },
-    { targetCount: 4, damage: 15 },
-    { targetCount: 5, damage: 20 },
+    { targetCount: 2, damage: 1 },
+    { targetCount: 3, damage: 1 },
+    { targetCount: 4, damage: 2 },
+    { targetCount: 5, damage: 2 },
   ],
   [
-    'After match: hit 1 random gem, 1 damage',
-    'After match: hit 2 random gems, 5 damage',
-    'After match: hit 3 random gems, 10 damage',
-    'After match: hit 4 random gems, 15 damage',
-    'After match: hit 5 random gems, 20 damage',
+    'After match: hit 1 random tile, 1 damage',
+    'After match: hit 2 random tiles, 1 damage each',
+    'After match: hit 3 random tiles, 1 damage each',
+    'After match: hit 4 random tiles, 2 damage each',
+    'After match: hit 5 random tiles, 2 damage each',
   ],
 );
 

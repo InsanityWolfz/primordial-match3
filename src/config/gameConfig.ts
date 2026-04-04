@@ -39,12 +39,8 @@ export const GAME_CONFIG = {
   // Gem HP
   defaultGemHp: 1,
 
-  // Scoring
-  scorePerGem: 10,
-  cascadeMultiplier: 1.5,
-
   // Round settings
-  turnsPerRound: 20,
+  turnsPerRound: 15,
 
   // Physics
   physics: {
@@ -58,3 +54,8 @@ export const GAME_CONFIG = {
   // Scene configuration
   backgroundColor: '#1a0a2e',
 } as const;
+
+// Mutable debug flags — flip debugStats to true to log per-round balance data
+export const DEBUG_CONFIG = {
+  debugStats: false,
+};

@@ -27,23 +27,26 @@ export class FirePowerExecutor {
 
   /**
    * Fireball: area blast around target.
-   * Radius and damage scale with level from config.
+   * Hits gems (destroys them), enemy tiles (deals full damage to enemy), hazards (1 instance).
    */
   async executeFireball(level: number, targetRow: number, targetCol: number): Promise<void> {
     const params = this.getParams('fireball', level);
     const r = params.radius ?? 1;
     let damage = params.damage ?? 1;
 
-    // Passive: crit chance + refund
     const passiveResult = this.passiveManager.onDamageDealt('fire', damage, 'fireball');
     damage = passiveResult.modifiedDamage;
 
+    // Include ALL valid positions in AoE — gems AND enemy tiles
     const positions: { row: number; col: number }[] = [];
     for (let dr = -r; dr <= r; dr++) {
       for (let dc = -r; dc <= r; dc++) {
         const nr = targetRow + dr;
         const nc = targetCol + dc;
-        if (this.ctx.grid.isValidPosition(nr, nc) && this.ctx.grid.getGem(nr, nc)) {
+        if (
+          this.ctx.grid.isValidPosition(nr, nc) &&
+          (this.ctx.grid.getGem(nr, nc) || this.ctx.grid.isEnemyTile(nr, nc))
+        ) {
           positions.push({ row: nr, col: nc });
         }
       }
@@ -66,10 +69,7 @@ export class FirePowerExecutor {
       onComplete: () => flash.destroy(),
     });
 
-    const result = await this.damageSystem.dealDamage(positions, damage, 'fire');
-
-    this.ctx.score += result.destroyed.length * GAME_CONFIG.scorePerGem;
-    this.ctx.updateScoreDisplay();
+    await this.damageSystem.dealDamage(positions, damage, 'fire');
 
     await this.cascadeSystem.applyGravityAndSpawn();
 
@@ -78,7 +78,6 @@ export class FirePowerExecutor {
       await this.cascadeSystem.processCascade(matches, 1);
     }
 
-    // Passive: refund charge
     if (passiveResult.refundCharge) {
       const owned = this.ctx.ownedPowerUps.find(p => p.powerUpId === 'fireball');
       if (owned) owned.charges++;

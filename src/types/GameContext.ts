@@ -4,13 +4,14 @@ import type { Gem } from '../entities/Gem.ts';
 import type { GemType } from '../config/gameConfig.ts';
 import type { OwnedPowerUp } from './RunState.ts';
 import type { HazardManager } from '../systems/HazardManager.ts';
+import type { EnemyManager } from '../systems/EnemyManager.ts';
 
 export interface GameContext {
   phaserScene: Phaser.Scene;
   grid: Grid;
   hazardManager: HazardManager;
+  enemyManager: EnemyManager;
   essence: number;
-  score: number;
   round: number;
   turnsRemaining: number;
   isSwapping: boolean;
@@ -20,8 +21,10 @@ export interface GameContext {
 
   // UI updates
   updateEssenceDisplay(): void;
-  updateScoreDisplay(): void;
   updateTurnsDisplay(): void;
+  updateEnemyDisplay(): void;
+  showDamageNumber(worldX: number, worldY: number, amount: number, isEnemy?: boolean): void;
+  flashPowerActivation(): void;
 
   // Gem helpers
   getRandomGemType(): GemType;

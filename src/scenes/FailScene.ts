@@ -39,22 +39,22 @@ export class FailScene extends Phaser.Scene {
       fontFamily: 'Arial',
     }).setOrigin(0.5, 0.5);
 
-    // Final score
-    this.add.text(cx, 350, `Final Score: ${this.runState.score}`, {
+    // Essence earned
+    this.add.text(cx, 350, `Essence Earned: ${this.runState.essence}`, {
       fontSize: '24px',
       color: '#aaaaaa',
       fontFamily: 'Arial',
     }).setOrigin(0.5, 0.5);
 
     // Failure message
-    this.add.text(cx, 440, 'Hazards were not cleared!', {
+    this.add.text(cx, 440, 'Enemies defeated you!', {
       fontSize: '20px',
       color: '#ff8844',
       fontFamily: 'Arial',
       fontStyle: 'bold',
     }).setOrigin(0.5, 0.5);
 
-    this.add.text(cx, 480, 'Clear all hazards before your turns run out.', {
+    this.add.text(cx, 480, 'Turns ran out with no power charges remaining.', {
       fontSize: '16px',
       color: '#888888',
       fontFamily: 'Arial',
@@ -93,14 +93,7 @@ export class FailScene extends Phaser.Scene {
 
     hitArea.on('pointerdown', () => {
       // Explicitly pass fresh run state to ensure full reset
-      this.scene.start('GameScene', {
-        essence: 0,
-        score: 0,
-        round: 0,       // round <= 0 triggers reset path in GameScene
-        ownedPowerUps: [],
-        powerSlotCount: 4,
-        passiveSlotCount: 2,
-      });
+      this.scene.start('StarterScene');
     });
 
     // Inventory bar — shows what you had when you failed (compact mode)

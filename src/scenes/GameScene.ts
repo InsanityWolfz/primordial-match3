@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
-import { GAME_CONFIG } from '../config/gameConfig.ts';
+import { GAME_CONFIG, DEBUG_CONFIG } from '../config/gameConfig.ts';
 import type { GemType } from '../config/gameConfig.ts';
 import type { RunState, OwnedPowerUp } from '../types/RunState.ts';
+import { StatsLogger } from '../utils/StatsLogger.ts';
 import type { GameContext } from '../types/GameContext.ts';
 import { getPowerUpDef } from '../config/powerUps.ts';
 import { Grid } from '../entities/Grid.ts';
@@ -9,16 +10,17 @@ import { Gem } from '../entities/Gem.ts';
 import { CascadeSystem } from '../systems/CascadeSystem.ts';
 import { DamageSystem } from '../systems/DamageSystem.ts';
 import { HazardManager } from '../systems/HazardManager.ts';
+import { EnemyManager } from '../systems/EnemyManager.ts';
 import { PassiveManager } from '../systems/PassiveManager.ts';
 import { PowerUpExecutor } from '../systems/PowerUpExecutor.ts';
 import { HudManager } from '../ui/HudManager.ts';
 import { InventoryBar } from '../ui/InventoryBar.ts';
+import { PowerDrawer } from '../ui/PowerDrawer.ts';
 
 export class GameScene extends Phaser.Scene implements GameContext {
   grid!: Grid;
   selectedGem: Gem | null = null;
   isSwapping = false;
-  score = 0;
   round = 1;
   turnsRemaining = 0;
   essence = 0;
@@ -26,40 +28,52 @@ export class GameScene extends Phaser.Scene implements GameContext {
   powerSlotCount = 4;
   passiveSlotCount = 2;
 
-  // Hazard win condition
-  private hazardsCleared = false;
-  private hazardStatusText!: Phaser.GameObjects.Text;
-  private hazardClearedBanner: Phaser.GameObjects.Text | null = null;
+  // Per-round essence multiplier counters (accumulate all round, reset next round)
+  private roundGemsDestroyed = 0;
+  private roundMatch3Count = 0;
+  private roundMatch4Count = 0;
+  private roundMatch5Count = 0;
+
+  // Per-round balance stats (only used when DEBUG_CONFIG.debugStats is true)
+  private runId = '';
+  private roundEnemiesKilled = 0;
+  private roundHazardsCleared = 0;
+  private roundPowerUses: Record<string, number> = {};
+
+  // Round modifier effect state
+  private essenceMultiplier = 1.0;
+  private activeModifierId: string | null = null;
 
   // Systems
   private cascadeSystem!: CascadeSystem;
   private damageSystem!: DamageSystem;
   hazardManager!: HazardManager;
+  enemyManager!: EnemyManager;
   private passiveManager!: PassiveManager;
   private powerUpExecutor!: PowerUpExecutor;
   private hudManager!: HudManager;
   private inventoryBar!: InventoryBar;
+  private powerDrawer!: PowerDrawer;
 
   // UI — HUD bar
   private turnDrainBar!: Phaser.GameObjects.Graphics;
-  private scoreValueText!: Phaser.GameObjects.Text;
+  private enemyValueText!: Phaser.GameObjects.Text;
   private turnCountText!: Phaser.GameObjects.Text;
   // UI — essence pill
   private essenceValueText!: Phaser.GameObjects.Text;
-  // UI — shop button (top-right HUD, activates when hazards cleared)
+  // UI — shop button
   private shopButtonBg!: Phaser.GameObjects.Graphics;
   private shopButtonLabel!: Phaser.GameObjects.Text;
-  private shopButtonEssence!: Phaser.GameObjects.Text;
+  private shopButtonSub!: Phaser.GameObjects.Text;
   private shopButtonZone!: Phaser.GameObjects.Zone;
-  // UI — A×B=C essence breakdown
+  // UI — per-round essence breakdown
   private essenceBreakdownFormula!: Phaser.GameObjects.Text;
 
-  // Round tracking for A×B=C essence bonus
-  private roundGemCount = 0;
-  private roundMatchThreeCount = 0;
+  // Y position where the inventory panel starts (below the grid)
+  private inventoryPanelY = 0;
 
   // Drag-to-swap state
-  private dragStartGem: import('../entities/Gem.ts').Gem | null = null;
+  private dragStartGem: Gem | null = null;
   private dragStartX = 0;
   private dragStartY = 0;
   private static readonly DRAG_THRESHOLD = 20;
@@ -68,7 +82,6 @@ export class GameScene extends Phaser.Scene implements GameContext {
   private debugGraphics: Phaser.GameObjects.Graphics | null = null;
   private debugVisible = false;
 
-  // GameContext implementation
   get phaserScene(): Phaser.Scene { return this; }
 
   constructor() {
@@ -77,79 +90,98 @@ export class GameScene extends Phaser.Scene implements GameContext {
 
   create(data?: RunState): void {
     this.initializeGame(data);
+    this.applyModifier(data?.currentModifier ?? null);
     this.initializeSystems();
     this.renderGrid();
     this.createDebugButtons();
     this.setupDebugKeys();
     this.setupDragInput();
+
     this.cascadeSystem.clearInitialMatches().then(() => {
-      // Place hazards after initial matches are cleared
-      this.hazardManager.placeHazards(this.round);
-      this.updateHazardStatus();
-      // If no hazards were placed (shouldn't happen, but handle it), auto-clear
-      if (this.hazardManager.getTotalPlaced() === 0) {
-        this.hazardsCleared = true;
+      this.enemyManager.placeEnemies(this.round);
+      // Overcrowded: add 2 extra enemies after normal placement
+      if (this.activeModifierId === 'overcrowded') {
+        this.enemyManager.addExtraEnemies(2, this.round);
       }
+      this.hazardManager.placeHazards(this.round);
+      this.updateEnemyDisplay();
     });
   }
 
+  private applyModifier(modifier: { id: string; name: string; description: string } | null | undefined): void {
+    // Reset modifier state
+    this.essenceMultiplier = 1.0;
+    this.activeModifierId = modifier?.id ?? null;
+
+    if (!modifier) return;
+
+    switch (modifier.id) {
+      case 'rush':
+        this.turnsRemaining = 10;
+        this.updateTurnsDisplay();
+        break;
+      case 'hazardStorm':
+        // Applied after initializeSystems sets up hazardManager
+        break;
+      case 'abundance':
+        this.essenceMultiplier = 1.5;
+        break;
+      // 'overcrowded' is handled post-clearInitialMatches above
+    }
+  }
+
   initializeGame(data?: RunState): void {
-    this.grid = new Grid(
-      GAME_CONFIG.gridRows,
-      GAME_CONFIG.gridCols,
-      [...GAME_CONFIG.gemTypes],
-    );
+    this.grid = new Grid(GAME_CONFIG.gridRows, GAME_CONFIG.gridCols, [...GAME_CONFIG.gemTypes]);
     this.selectedGem = null;
     this.isSwapping = false;
     this.turnsRemaining = GAME_CONFIG.turnsPerRound;
-    // Reset per-round A×B=C counters
-    this.roundGemCount = 0;
-    this.roundMatchThreeCount = 0;
+    this.resetRoundCounters();
 
     if (data && data.round > 0) {
       this.essence = data.essence;
-      this.score = data.score;
       this.round = data.round;
       this.ownedPowerUps = data.ownedPowerUps.map(p => ({ ...p }));
       this.powerSlotCount = data.powerSlotCount ?? 4;
       this.passiveSlotCount = data.passiveSlotCount ?? 2;
+      this.runId = data.runId ?? String(Date.now());
     } else {
       this.essence = 0;
-      this.score = 0;
       this.round = 1;
       this.ownedPowerUps = [];
       this.powerSlotCount = 4;
       this.passiveSlotCount = 2;
+      this.runId = String(Date.now());
     }
 
-    // Draw scene background, grid panel, HUD bar and essence pill
     this.drawBackground();
     this.drawGridPanel();
     this.drawHUDBar();
     this.drawEssencePill();
     this.drawEssenceBreakdown();
+  }
 
-    // Hazard status display — positioned just above the gem board, styled like HUD text
-    this.hazardsCleared = false;
-    this.hazardClearedBanner = null;
-    this.hazardStatusText = this.add.text(
-      GAME_CONFIG.width / 2,
-      GAME_CONFIG.gridOffsetY - 8,
-      '',
-      {
-        fontSize: '13px',
-        color: '#ff8844',
-        fontFamily: 'Arial',
-        fontStyle: 'bold',
-      },
-    ).setOrigin(0.5, 1).setDepth(11);
+  private resetRoundCounters(): void {
+    this.roundGemsDestroyed = 0;
+    this.roundMatch3Count = 0;
+    this.roundMatch4Count = 0;
+    this.roundMatch5Count = 0;
+    this.roundEnemiesKilled = 0;
+    this.roundHazardsCleared = 0;
+    this.roundPowerUses = {};
   }
 
   private initializeSystems(): void {
-    // HudManager
+    this.enemyManager = new EnemyManager(this, this.grid);
+    this.enemyManager.setOnEnemyDied(() => {
+      this.roundEnemiesKilled++;
+      this.updateEnemyDisplay();
+      this.updateShopButton();
+    });
+
     this.hudManager = new HudManager(this, this.ownedPowerUps, {
       onActivate: (id: string, needsTarget: boolean) => {
         if (!needsTarget) {
+          this.trackPowerUse(id);
           this.powerUpExecutor.executeNonTargetedPowerUp(id);
         }
       },
@@ -158,7 +190,6 @@ export class GameScene extends Phaser.Scene implements GameContext {
       clearSelectedGem: () => { this.selectedGem = null; },
     });
 
-    // CascadeSystem (post-match passives wired through powerUpExecutor)
     this.cascadeSystem = new CascadeSystem(
       this,
       (matchPositions) => this.powerUpExecutor.executePostMatchPassives(matchPositions),
@@ -169,72 +200,86 @@ export class GameScene extends Phaser.Scene implements GameContext {
       cancelTargeting: () => this.hudManager.cancelTargeting(),
       endRound: () => this.endRound(),
       onActionComplete: () => {
-        this.updateHazardStatus();
-        this.checkHazardsCleared();
-        // Apply turn bonus for gem destruction that happened during this power use
-        this.applyAndResetTurnBonus();
+        this.updateEnemyDisplay();
+        this.updateShopButton();
+        this.flashPowerActivation();
       },
       onFlashCard: (id) => this.hudManager.flashCard(id),
-      onPowerTurnConsumed: () => {
-        this.updateTurnsDisplay();
-        this.updateShopButton();
-      },
     });
 
-    // HazardManager
     this.hazardManager = new HazardManager(this, this.grid);
+    if (this.activeModifierId === 'hazardStorm') {
+      this.hazardManager.maxHazards = 25;
+      this.hazardManager.spawnRateMultiplier = 1.5;
+    }
 
-    // PassiveManager - stat passive hooks
     this.passiveManager = new PassiveManager(this);
     this.passiveManager.setFlashCardCallback((id) => this.hudManager.flashCard(id));
 
-    // DamageSystem - central damage pipeline
     this.damageSystem = new DamageSystem(this);
     this.cascadeSystem.setDamageSystem(this.damageSystem);
-
-    // PassiveManager needs DamageSystem for Combustion
     this.passiveManager.setDamageSystem(this.damageSystem);
-
-    // DamageSystem needs PassiveManager for element essence bonuses
     this.damageSystem.setPassiveManager(this.passiveManager);
 
-    // Initialize all element executors with systems
-    this.powerUpExecutor.initExecutors(this.cascadeSystem, this.damageSystem, this.passiveManager);
+    // Per-round essence tracking
+    this.cascadeSystem.setOnMatchGroup((element, size) => {
+      if (size === 3) this.roundMatch3Count++;
+      else if (size === 4) this.roundMatch4Count++;
+      else if (size >= 5) this.roundMatch5Count++;
+      this.refundChargesForElement(element, size);
+      this.updateEssenceBreakdown();
+    });
+    this.cascadeSystem.setOnGemsDestroyed((count) => {
+      this.roundGemsDestroyed += count;
+      this.updateEssenceBreakdown();
+    });
+    // Power-destroyed gems also count toward round total
+    this.damageSystem.setOnGemsDestroyed((count) => {
+      this.roundGemsDestroyed += count;
+      this.updateEssenceBreakdown();
+    });
+    this.damageSystem.setOnHazardsDestroyed((count) => {
+      this.roundHazardsCleared += count;
+    });
 
-    // Wire CascadeSystem to PassiveManager for match hooks
+    this.powerUpExecutor.initExecutors(this.cascadeSystem, this.damageSystem, this.passiveManager);
     this.cascadeSystem.setPassiveManager(this.passiveManager);
 
-    // Wire A×B=C round bonus tracking callbacks
-    this.damageSystem.setOnGemsDestroyed((count) => {
-      this.roundGemCount += count;
-      this.updateEssenceBreakdown();
-    });
-    this.cascadeSystem.setOnMatchThree(() => {
-      this.roundMatchThreeCount++;
-      this.updateEssenceBreakdown();
-    });
+    const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
+    const barY = GAME_CONFIG.gridOffsetY + GAME_CONFIG.gridRows * cellSize + 8;
+    this.inventoryPanelY = barY;
 
-    // Inventory bar — fills from grid bottom to screen bottom
-    const cellSize2 = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
-    const gridBottom2 = GAME_CONFIG.gridOffsetY + GAME_CONFIG.gridRows * cellSize2;
-    const barY = gridBottom2 + 8;
-    this.inventoryBar = new InventoryBar(this, this.ownedPowerUps, barY, {
+    // Power drawer (slides up from bottom with full detail)
+    this.powerDrawer = new PowerDrawer(this, this.ownedPowerUps, {
       onActivatePowerUp: (id) => this.hudManager.activateById(id),
     });
-    this.inventoryBar.create();
+    this.hudManager.setDrawer(this.powerDrawer);
 
-    // Wire inventory bar into HudManager so it can update card visuals
+    // Power panel (circles + passive lists below grid)
+    this.inventoryBar = new InventoryBar(this, this.ownedPowerUps, barY, {
+      onActivatePowerUp: (id) => this.hudManager.activateById(id),
+      onOpenDrawer: () => this.hudManager.openDrawer(),
+    });
+    this.inventoryBar.create();
     this.hudManager.setInventoryBar(this.inventoryBar);
   }
 
-  // ──────────────── GameContext UI updates ────────────────
+  // ──────────────── GameContext UI ────────────────
 
   updateEssenceDisplay(): void {
     this.essenceValueText.setText(`${this.essence}`);
-  }
-
-  updateScoreDisplay(): void {
-    this.scoreValueText.setText(`${this.score}`);
+    // Bounce animation when essence increases
+    this.tweens.add({
+      targets: this.essenceValueText,
+      scaleX: 1.3, scaleY: 1.3,
+      duration: 120,
+      yoyo: true,
+      ease: 'Power1',
+    });
+    this.essenceValueText.setColor('#ffffaa');
+    this.time.delayedCall(250, () => {
+      if (this.essenceValueText?.active) this.essenceValueText.setColor('#aabbff');
+    });
   }
 
   updateTurnsDisplay(): void {
@@ -246,8 +291,58 @@ export class GameScene extends Phaser.Scene implements GameContext {
     this.turnCountText.setText(`${this.turnsRemaining} / ${GAME_CONFIG.turnsPerRound}`);
     this.turnCountText.setColor(color);
     this.redrawTurnDrainBar();
-    // Keep shop button essence preview up to date as turns are spent
     this.updateShopButton();
+
+    // Pulse at low turns
+    if (this.turnsRemaining <= 2 && this.turnsRemaining > 0) {
+      this.tweens.add({
+        targets: this.turnCountText,
+        scaleX: 1.2, scaleY: 1.2,
+        duration: 100,
+        yoyo: true,
+        ease: 'Power1',
+      });
+    }
+  }
+
+  // ──────────────── FEEDBACK ────────────────
+
+  /**
+   * Spawn a floating damage number at a world position that floats upward and fades out.
+   */
+  showDamageNumber(worldX: number, worldY: number, amount: number, isEnemy = false): void {
+    const color = isEnemy ? (amount >= 3 ? '#ff4444' : '#ff8844') : '#ffffff';
+    const text = this.add.text(worldX, worldY, `-${amount}`, {
+      fontSize: isEnemy ? '18px' : '14px',
+      color,
+      fontFamily: 'Arial',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 2,
+    }).setOrigin(0.5, 0.5).setDepth(20);
+
+    this.tweens.add({
+      targets: text,
+      y: worldY - 40,
+      alpha: 0,
+      duration: 600,
+      ease: 'Power1',
+      onComplete: () => text.destroy(),
+    });
+  }
+
+  /**
+   * Brief white camera flash — called after a power-up activates.
+   */
+  flashPowerActivation(): void {
+    this.cameras.main.flash(180, 255, 255, 255, false);
+  }
+
+  updateEnemyDisplay(): void {
+    if (!this.enemyValueText) return;
+    const remaining = this.enemyManager.getRemainingCount();
+    this.enemyValueText.setText(`${remaining}`);
+    this.enemyValueText.setColor(remaining === 0 ? '#44cc44' : '#ff6644');
   }
 
   getRandomGemType(): GemType {
@@ -256,72 +351,66 @@ export class GameScene extends Phaser.Scene implements GameContext {
   }
 
   findMatches(): { row: number; col: number }[] {
-    // Hazarded gems can participate in matches (they just can't be swapped).
-    return this.grid.findMatches();
+    return this.grid.findMatches((r, c) => this.hazardManager.hasHazard(r, c));
   }
 
   delay(ms: number): Promise<void> {
-    return new Promise((resolve) => {
-      this.time.delayedCall(ms, resolve);
-    });
+    return new Promise(resolve => this.time.delayedCall(ms, resolve));
   }
 
-  // ──────────────── HAZARD STATUS ────────────────
+  // ──────────────── CHARGE REFUND ────────────────
 
-  updateHazardStatus(): void {
-    const remaining = this.hazardManager.getRemainingCount();
-    const total = this.hazardManager.getTotalPlaced();
+  private refundChargesForElement(element: string, matchSize: number): void {
+    const chargesGained = Math.min(matchSize - 2, 3);
+    if (chargesGained <= 0) return;
 
-    if (this.hazardsCleared || remaining === 0) {
-      this.hazardStatusText.setText('\u2713 Hazards Cleared!');
-      this.hazardStatusText.setColor('#44cc44');
-    } else {
-      this.hazardStatusText.setText(`Hazards: ${remaining} / ${total}`);
-      this.hazardStatusText.setColor('#ff8844');
+    let anyRefunded = false;
+    for (const owned of this.ownedPowerUps) {
+      const def = getPowerUpDef(owned.powerUpId);
+      if (!def || def.element !== element || def.category === 'passive') continue;
+      const before = owned.charges;
+      owned.charges = Math.min(owned.maxCharges, owned.charges + chargesGained);
+      if (owned.charges > before) anyRefunded = true;
+    }
+
+    if (anyRefunded) {
+      this.hudManager.updateHudCharges();
+      this.showChargeRefundFeedback(element, chargesGained);
     }
   }
 
-  checkHazardsCleared(): void {
-    if (this.hazardsCleared) return;
-    if (this.hazardManager.getRemainingCount() > 0) return;
+  private showChargeRefundFeedback(element: string, amount: number): void {
+    const gemTypeDef = GAME_CONFIG.gemTypes.find(g => g.name === element);
+    const hex = gemTypeDef ? gemTypeDef.color.toString(16).padStart(6, '0') : 'ffffff';
+    const color = `#${hex}`;
 
-    this.hazardsCleared = true;
-    this.updateHazardStatus();
-    this.updateShopButton();
-
-    // Show a brief "Cleared!" banner
-    if (this.hazardClearedBanner) this.hazardClearedBanner.destroy();
-    this.hazardClearedBanner = this.add.text(
+    const text = this.add.text(
       GAME_CONFIG.width / 2,
-      GAME_CONFIG.gridOffsetY + (GAME_CONFIG.gridRows * (GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding)) / 2,
-      'HAZARDS CLEARED!',
-      {
-        fontSize: '36px',
-        color: '#44ff44',
-        fontFamily: 'Arial',
-        fontStyle: 'bold',
-        stroke: '#000000',
-        strokeThickness: 4,
-      },
-    ).setOrigin(0.5, 0.5);
+      GAME_CONFIG.gridOffsetY - 30,
+      `+${amount} ${element} charge${amount > 1 ? 's' : ''}`,
+      { fontSize: '14px', color, fontFamily: 'Arial', fontStyle: 'bold', stroke: '#000000', strokeThickness: 3 },
+    ).setOrigin(0.5, 1).setDepth(20).setAlpha(0);
 
-    // Fade out the banner
     this.tweens.add({
-      targets: this.hazardClearedBanner,
-      alpha: 0,
-      y: this.hazardClearedBanner.y - 60,
-      duration: 1500,
+      targets: text,
+      alpha: 1,
+      y: text.y - 30,
+      duration: 300,
       ease: 'Power2',
       onComplete: () => {
-        if (this.hazardClearedBanner) {
-          this.hazardClearedBanner.destroy();
-          this.hazardClearedBanner = null;
-        }
+        this.tweens.add({
+          targets: text,
+          alpha: 0,
+          y: text.y - 20,
+          duration: 500,
+          delay: 400,
+          onComplete: () => text.destroy(),
+        });
       },
     });
   }
 
-  // ──────────────── HUD DRAW METHODS ────────────────
+  // ──────────────── HUD ────────────────
 
   private drawBackground(): void {
     const bg = this.add.graphics();
@@ -339,26 +428,13 @@ export class GameScene extends Phaser.Scene implements GameContext {
     const margin = 8;
     const panel = this.add.graphics();
     panel.fillStyle(0x0a0a18, 0.6);
-    panel.fillRoundedRect(
-      GAME_CONFIG.gridOffsetX - margin,
-      GAME_CONFIG.gridOffsetY - margin,
-      gridW + margin * 2,
-      gridH + margin * 2,
-      8,
-    );
+    panel.fillRoundedRect(GAME_CONFIG.gridOffsetX - margin, GAME_CONFIG.gridOffsetY - margin, gridW + margin * 2, gridH + margin * 2, 8);
     panel.lineStyle(1, 0x222244, 0.5);
-    panel.strokeRoundedRect(
-      GAME_CONFIG.gridOffsetX - margin,
-      GAME_CONFIG.gridOffsetY - margin,
-      gridW + margin * 2,
-      gridH + margin * 2,
-      8,
-    );
+    panel.strokeRoundedRect(GAME_CONFIG.gridOffsetX - margin, GAME_CONFIG.gridOffsetY - margin, gridW + margin * 2, gridH + margin * 2, 8);
     panel.setDepth(-1);
   }
 
   private drawHUDBar(): void {
-    // Background panel (local var — drawn once, never redrawn)
     const hudBar = this.add.graphics();
     hudBar.fillStyle(0x111122, 1);
     hudBar.fillRect(0, 0, GAME_CONFIG.width, 80);
@@ -366,89 +442,37 @@ export class GameScene extends Phaser.Scene implements GameContext {
     hudBar.lineBetween(0, 80, GAME_CONFIG.width, 80);
     hudBar.setDepth(10);
 
-    // Turn drain bar (drawn separately so it can be redrawn)
     this.turnDrainBar = this.add.graphics();
     this.turnDrainBar.setDepth(11);
 
-    // ROUND section (left, shifted to make room for shop button)
-    this.add.text(75, 12, 'ROUND', {
-      fontSize: '11px',
-      color: '#6666aa',
-      fontFamily: 'Arial',
-      fontStyle: 'bold',
-    }).setOrigin(0.5, 0).setDepth(11);
+    // ROUND
+    this.add.text(75, 12, 'ROUND', { fontSize: '11px', color: '#6666aa', fontFamily: 'Arial', fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(11);
+    this.add.text(75, 28, `${this.round}`, { fontSize: '32px', color: '#ffffff', fontFamily: 'Arial', fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(11);
 
-    this.add.text(75, 28, `${this.round}`, {
-      fontSize: '32px',
-      color: '#ffffff',
-      fontFamily: 'Arial',
-      fontStyle: 'bold',
-    }).setOrigin(0.5, 0).setDepth(11);
+    // ENEMIES
+    this.add.text(225, 12, 'ENEMIES', { fontSize: '11px', color: '#6666aa', fontFamily: 'Arial', fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(11);
+    this.enemyValueText = this.add.text(225, 28, '?', { fontSize: '32px', color: '#ff6644', fontFamily: 'Arial', fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(11);
 
-    // SCORE section (center-left)
-    this.add.text(225, 12, 'SCORE', {
-      fontSize: '11px',
-      color: '#6666aa',
-      fontFamily: 'Arial',
-      fontStyle: 'bold',
-    }).setOrigin(0.5, 0).setDepth(11);
+    // TURNS
+    this.add.text(375, 12, 'TURNS', { fontSize: '11px', color: '#6666aa', fontFamily: 'Arial', fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(11);
+    this.turnCountText = this.add.text(375, 28, `${this.turnsRemaining} / ${GAME_CONFIG.turnsPerRound}`, { fontSize: '28px', color: '#ffffff', fontFamily: 'Arial', fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(11);
 
-    this.scoreValueText = this.add.text(225, 28, `${this.score}`, {
-      fontSize: '32px',
-      color: '#ffffff',
-      fontFamily: 'Arial',
-      fontStyle: 'bold',
-    }).setOrigin(0.5, 0).setDepth(11);
-
-    // TURNS section (center-right)
-    this.add.text(375, 12, 'TURNS', {
-      fontSize: '11px',
-      color: '#6666aa',
-      fontFamily: 'Arial',
-      fontStyle: 'bold',
-    }).setOrigin(0.5, 0).setDepth(11);
-
-    this.turnCountText = this.add.text(375, 28, `${this.turnsRemaining} / ${GAME_CONFIG.turnsPerRound}`, {
-      fontSize: '28px',
-      color: '#ffffff',
-      fontFamily: 'Arial',
-      fontStyle: 'bold',
-    }).setOrigin(0.5, 0).setDepth(11);
-
-    // ── Shop Button (right side, x=452–710) ──
+    // Shop button
     this.shopButtonBg = this.add.graphics();
     this.shopButtonBg.setDepth(12);
     this.drawShopButtonBg(false);
 
-    this.shopButtonLabel = this.add.text(586, 22, 'GO TO SHOP', {
-      fontSize: '14px',
-      color: '#555577',
-      fontFamily: 'Arial',
-      fontStyle: 'bold',
-    }).setOrigin(0.5, 0).setDepth(13);
+    this.shopButtonLabel = this.add.text(586, 22, 'GO TO SHOP', { fontSize: '14px', color: '#555577', fontFamily: 'Arial', fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(13);
+    this.shopButtonSub = this.add.text(586, 44, 'KILL ALL ENEMIES', { fontSize: '11px', color: '#444466', fontFamily: 'Arial' }).setOrigin(0.5, 0).setDepth(13);
 
-    this.shopButtonEssence = this.add.text(586, 44, 'CLEAR HAZARDS', {
-      fontSize: '11px',
-      color: '#444466',
-      fontFamily: 'Arial',
-    }).setOrigin(0.5, 0).setDepth(13);
-
-    this.shopButtonZone = this.add.zone(586, 40, 258, 68)
-      .setDepth(13)
-      .disableInteractive();
+    this.shopButtonZone = this.add.zone(586, 40, 258, 68).setDepth(13).disableInteractive();
     this.shopButtonZone.on('pointerdown', () => this.onShopButtonClick());
 
-    // Draw initial drain bar
     this.redrawTurnDrainBar();
   }
 
   private drawEssencePill(): void {
-    // Pill centered at x=360 (screen center), shop button sits to the right at x=452+
-    const pillW = 180;
-    const pillH = 28;
-    const pillX = 270;   // center at x=360
-    const pillY = 88;
-
+    const pillW = 180, pillH = 28, pillX = 270, pillY = 88;
     const pill = this.add.graphics();
     pill.fillStyle(0x1a1a33, 0.9);
     pill.fillRoundedRect(pillX, pillY, pillW, pillH, 14);
@@ -456,89 +480,44 @@ export class GameScene extends Phaser.Scene implements GameContext {
     pill.strokeRoundedRect(pillX, pillY, pillW, pillH, 14);
     pill.setDepth(10);
 
-    // Diamond icon
-    const iconX = pillX + 22;
-    const iconY = pillY + 14;
-    const ds = 6;
+    const iconX = pillX + 22, iconY = pillY + 14, ds = 6;
     const diamond = this.add.graphics();
     diamond.fillStyle(0x88aaff, 1);
     diamond.fillTriangle(iconX, iconY - ds, iconX + ds, iconY, iconX, iconY + ds);
     diamond.fillTriangle(iconX - ds, iconY, iconX, iconY - ds, iconX, iconY + ds);
     diamond.setDepth(11);
 
-    // "ESSENCE" label
-    this.add.text(iconX + 10, pillY + 14, 'ESSENCE', {
-      fontSize: '10px',
-      color: '#8888cc',
-      fontFamily: 'Arial',
-      fontStyle: 'bold',
-    }).setOrigin(0, 0.5).setDepth(11);
-
-    // Value (right-aligned inside pill)
-    this.essenceValueText = this.add.text(pillX + pillW - 12, pillY + 14, `${this.essence}`, {
-      fontSize: '16px',
-      color: '#aabbff',
-      fontFamily: 'Arial',
-      fontStyle: 'bold',
-    }).setOrigin(1, 0.5).setDepth(11);
+    this.add.text(iconX + 10, pillY + 14, 'ESSENCE', { fontSize: '10px', color: '#8888cc', fontFamily: 'Arial', fontStyle: 'bold' }).setOrigin(0, 0.5).setDepth(11);
+    this.essenceValueText = this.add.text(pillX + pillW - 12, pillY + 14, `${this.essence}`, { fontSize: '16px', color: '#aabbff', fontFamily: 'Arial', fontStyle: 'bold' }).setOrigin(1, 0.5).setDepth(11);
   }
 
-  /** Draws the static A×B=C turn bonus display below the essence pill. */
   private drawEssenceBreakdown(): void {
-    const cx = 360; // centered at screen center, aligned with essence pill
-    const y = 120;
-
-    // "TURN BONUS" label
-    this.add.text(cx, y, 'TURN BONUS', {
-      fontSize: '10px',
-      color: '#6666aa',
-      fontFamily: 'Arial',
-      fontStyle: 'bold',
-    }).setOrigin(0.5, 0).setDepth(11);
-
-    // Thin separator aligned with pill (x=270 to x=450)
+    const cx = 360, y = 120;
+    this.add.text(cx, y, 'ROUND ESSENCE', { fontSize: '10px', color: '#6666aa', fontFamily: 'Arial', fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(11);
     const sep = this.add.graphics();
     sep.lineStyle(1, 0x333355, 0.8);
     sep.lineBetween(270, y + 15, 450, y + 15);
     sep.setDepth(10);
-
-    // Formula text (updated live each turn)
-    this.essenceBreakdownFormula = this.add.text(cx, y + 20, '0 × 0 = 0', {
-      fontSize: '12px',
-      color: '#aabbff',
-      fontFamily: 'Arial',
-      fontStyle: 'bold',
-    }).setOrigin(0.5, 0).setDepth(11);
+    this.essenceBreakdownFormula = this.add.text(cx, y + 20, '0 gems', { fontSize: '11px', color: '#aabbff', fontFamily: 'Arial', fontStyle: 'bold' }).setOrigin(0.5, 0).setDepth(11);
   }
 
-  /** Updates the A×B=C formula text with current turn counters. B has a floor of 1. */
+  // +8% per match-3 / +20% per match-4 / +50% per match-5 (additive, no runaway stacking)
+  private calcEssenceMultiplier(): number {
+    return 1
+      + this.roundMatch3Count * 0.08
+      + this.roundMatch4Count * 0.20
+      + this.roundMatch5Count * 0.50;
+  }
+
   updateEssenceBreakdown(): void {
     if (!this.essenceBreakdownFormula) return;
-    const b = Math.max(1, this.roundMatchThreeCount);
-    const c = this.roundGemCount * b;
+    const mult    = this.calcEssenceMultiplier();
+    const preview = Math.floor(this.roundGemsDestroyed * mult);
     this.essenceBreakdownFormula.setText(
-      `${this.roundGemCount} × ${b} = ${c}`,
+      `${this.roundGemsDestroyed} gems × ${mult.toFixed(2)}× = ${preview}`,
     );
   }
 
-  /**
-   * After the board settles each turn: apply A×B=C as a turn bonus to essence,
-   * then reset both counters so the next turn starts fresh.
-   * B has a floor of 1 so power-up gem destruction always pays out.
-   */
-  applyAndResetTurnBonus(): void {
-    const b = Math.max(1, this.roundMatchThreeCount);
-    const turnBonus = this.roundGemCount * b;
-    if (turnBonus > 0) {
-      this.essence += turnBonus;
-      this.updateEssenceDisplay();
-    }
-    this.roundGemCount = 0;
-    this.roundMatchThreeCount = 0;
-    this.updateEssenceBreakdown();
-  }
-
-  /** Redraws the shop button background in active (green) or inactive (grey) state. */
   private drawShopButtonBg(active: boolean): void {
     this.shopButtonBg.clear();
     if (active) {
@@ -554,29 +533,24 @@ export class GameScene extends Phaser.Scene implements GameContext {
     }
   }
 
-  /** Updates the shop button text and interactivity based on hazard/turns state. */
   updateShopButton(): void {
-    if (!this.shopButtonBg) return; // guard: called before drawHUDBar in some init paths
-    if (this.hazardsCleared) {
-      const bonus = this.round * this.turnsRemaining * 20;
+    if (!this.shopButtonBg) return;
+    const enemiesDead = this.enemyManager?.allEnemiesDead() ?? false;
+    if (enemiesDead) {
       this.drawShopButtonBg(true);
       this.shopButtonLabel.setColor('#44cc88');
-      this.shopButtonEssence.setText(`${bonus} Essence`).setColor('#aaffcc');
+      this.shopButtonSub.setText('Enemies Cleared!').setColor('#aaffcc');
       this.shopButtonZone.setInteractive({ useHandCursor: true });
     } else {
       this.drawShopButtonBg(false);
       this.shopButtonLabel.setColor('#555577');
-      this.shopButtonEssence.setText('CLEAR HAZARDS').setColor('#444466');
+      this.shopButtonSub.setText('KILL ALL ENEMIES').setColor('#444466');
       this.shopButtonZone.disableInteractive();
     }
   }
 
-  /** Called when the player clicks the shop button after clearing hazards. */
   private onShopButtonClick(): void {
-    if (!this.hazardsCleared || this.isSwapping) return;
-    const bonus = this.round * this.turnsRemaining * 20;
-    this.essence += bonus;
-    this.updateEssenceDisplay();
+    if (!this.enemyManager.allEnemiesDead() || this.isSwapping) return;
     this.endRound();
   }
 
@@ -586,12 +560,9 @@ export class GameScene extends Phaser.Scene implements GameContext {
     if (ratio <= 0.15) barColor = 0xff4444;
     else if (ratio <= 0.25) barColor = 0xff8844;
     else if (ratio <= 0.5) barColor = 0xffcc44;
-
     this.turnDrainBar.clear();
-    // Track background
     this.turnDrainBar.fillStyle(0x222233, 1);
     this.turnDrainBar.fillRect(0, 76, GAME_CONFIG.width, 4);
-    // Colored fill
     this.turnDrainBar.fillStyle(barColor, 0.85);
     this.turnDrainBar.fillRect(0, 76, GAME_CONFIG.width * ratio, 4);
   }
@@ -628,13 +599,10 @@ export class GameScene extends Phaser.Scene implements GameContext {
     }
 
     if (this.grid.areAdjacent(this.selectedGem.gridRow, this.selectedGem.gridCol, gem.gridRow, gem.gridCol)) {
-      // Block swap if either gem has ANY hazard on it — hazards can be matched
-      // through adjacent gems but the hazarded gem itself cannot be moved.
       if (
         this.hazardManager.hasHazard(this.selectedGem.gridRow, this.selectedGem.gridCol) ||
         this.hazardManager.hasHazard(gem.gridRow, gem.gridCol)
       ) {
-        // Can't swap — deselect and give visual feedback
         this.selectedGem.deselect();
         this.selectedGem = null;
         return;
@@ -654,7 +622,6 @@ export class GameScene extends Phaser.Scene implements GameContext {
     this.selectedGem = null;
 
     await this.animateSwap(gem1, gem2);
-
     const matches = this.findMatches();
 
     if (matches.length === 0) {
@@ -663,47 +630,41 @@ export class GameScene extends Phaser.Scene implements GameContext {
       return;
     }
 
-    // Valid match — consume a turn (unless Sturdy saves it)
+    // Valid match — consume a turn (Sturdy passive may save it)
     const turnResult = this.passiveManager.onTurnConsumed();
-    if (!turnResult.turnSaved) {
-      this.turnsRemaining--;
-    }
-    if (turnResult.bonusTurn) {
-      this.turnsRemaining++;
-    }
+    if (!turnResult.turnSaved) this.turnsRemaining--;
+    if (turnResult.bonusTurn) this.turnsRemaining++;
     this.updateTurnsDisplay();
 
     await this.cascadeSystem.processCascade(matches, 1);
 
-    // Check if hazards were cleared during this cascade
-    this.updateHazardStatus();
-    this.checkHazardsCleared();
+    this.enemyManager.processTurnEnd();
+    await this.hazardManager.processTurnEnd();
 
-    // Process turn-end hazard behaviors (thorn vine spreading)
-    const newHazards = await this.hazardManager.processTurnEnd();
-    if (newHazards > 0) {
-      this.updateHazardStatus();
-    }
-
-    // Refresh power-up HUD (Energy Siphon may have drained charges)
     this.hudManager.updateHudCharges();
-
-    // Apply A×B=C turn bonus then reset counters for next turn
-    this.applyAndResetTurnBonus();
+    this.updateEnemyDisplay();
+    this.updateShopButton();
 
     this.isSwapping = false;
 
     if (this.turnsRemaining <= 0) {
-      await this.endRound();
+      await this.checkEndCondition();
     }
+  }
+
+  private async checkEndCondition(): Promise<void> {
+    if (this.enemyManager.allEnemiesDead()) {
+      await this.endRound();
+      return;
+    }
+    // Turns exhausted with enemies still alive = lose
+    await this.endRound();
   }
 
   async animateSwap(gem1: Gem, gem2: Gem): Promise<void> {
     const pos1 = gem1.getWorldPosition();
     const pos2 = gem2.getWorldPosition();
-
     this.grid.swap(gem1.gridRow, gem1.gridCol, gem2.gridRow, gem2.gridCol);
-
     await Promise.all([
       gem1.moveTo(pos2.x, pos2.y, GAME_CONFIG.swapDuration),
       gem2.moveTo(pos1.x, pos1.y, GAME_CONFIG.swapDuration),
@@ -715,54 +676,105 @@ export class GameScene extends Phaser.Scene implements GameContext {
   async endRound(): Promise<void> {
     await this.delay(500);
 
+    const success = this.enemyManager.allEnemiesDead();
+    const essenceEarned = success ? Math.floor(this.roundGemsDestroyed * this.calcEssenceMultiplier() * this.essenceMultiplier) : 0;
+
+    if (success) {
+      this.essence += essenceEarned;
+      this.updateEssenceDisplay();
+    }
+
+    if (DEBUG_CONFIG.debugStats) {
+      StatsLogger.logRound({
+        runId: this.runId,
+        round: this.round,
+        timestamp: Date.now(),
+        win: success,
+        modifier: this.activeModifierId,
+        essenceEarned,
+        gemsDestroyed: this.roundGemsDestroyed,
+        match3Count: this.roundMatch3Count,
+        match4Count: this.roundMatch4Count,
+        match5Count: this.roundMatch5Count,
+        hazardsCleared: this.roundHazardsCleared,
+        enemiesKilled: this.roundEnemiesKilled,
+        turnsUsed: GAME_CONFIG.turnsPerRound - Math.max(0, this.turnsRemaining),
+        powerUsesByPower: { ...this.roundPowerUses },
+      });
+    }
+
     const runState: RunState = {
       essence: this.essence,
       round: this.round,
-      score: this.score,
       ownedPowerUps: this.ownedPowerUps.map(p => ({ ...p })),
       powerSlotCount: this.powerSlotCount,
       passiveSlotCount: this.passiveSlotCount,
+      runId: this.runId,
     };
 
-    if (this.hazardsCleared) {
-      // Success — advance to shop
-      this.scene.start('ShopScene', runState);
+    if (success) {
+      this.scene.start('ShopScene', { ...runState, round: this.round + 1 });
     } else {
-      // Failure — hazards remain
       this.scene.start('FailScene', runState);
     }
+  }
+
+  private trackPowerUse(id: string): void {
+    if (!DEBUG_CONFIG.debugStats) return;
+    this.roundPowerUses[id] = (this.roundPowerUses[id] ?? 0) + 1;
   }
 
   // ──────────────── DRAG INPUT ────────────────
 
   setupDragInput(): void {
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => this.onScenePointerDown(pointer));
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => this.onScenePointerMove(pointer));
     this.input.on('pointerup',   (pointer: Phaser.Input.Pointer) => this.onScenePointerUp(pointer));
   }
 
-  /** Called on pointerdown on any gem sprite. Handles power-up targeting immediately;
-   *  otherwise records the drag start position for drag/tap detection. */
-  onGemPointerDown(gem: import('../entities/Gem.ts').Gem, pointer: Phaser.Input.Pointer): void {
+  onScenePointerDown(pointer: Phaser.Input.Pointer): void {
+    if (this.powerDrawer?.isVisible) return;
+    if (pointer.y >= this.inventoryPanelY) return;  // inventory panel area
+    if (this.isSwapping) return;
+    const activePowerUpId = this.hudManager.getActivePowerUpId();
+    if (!activePowerUpId) return;
+    const def = getPowerUpDef(activePowerUpId);
+    if (!def?.needsTarget) return;
+
+    // Calculate grid cell from screen position
+    const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
+    const col = Math.floor((pointer.x - GAME_CONFIG.gridOffsetX) / cellSize);
+    const row = Math.floor((pointer.y - GAME_CONFIG.gridOffsetY) / cellSize);
+
+    if (row < 0 || row >= this.grid.rows || col < 0 || col >= this.grid.cols) return;
+    if (!this.grid.isEnemyTile(row, col)) return; // gem clicks are handled by gem sprites
+
+    this.trackPowerUse(activePowerUpId);
+    this.powerUpExecutor.executeTargetedPowerUp(activePowerUpId, row, col);
+  }
+
+  onGemPointerDown(gem: Gem, pointer: Phaser.Input.Pointer): void {
+    if (this.powerDrawer?.isVisible) return;
+    if (pointer.y >= this.inventoryPanelY) return;  // inventory panel area
     if (this.isSwapping) return;
 
-    // Power-up targeting: fire immediately on press
     const activePowerUpId = this.hudManager.getActivePowerUpId();
     if (activePowerUpId) {
       const def = getPowerUpDef(activePowerUpId);
       if (def?.needsTarget) {
+        this.trackPowerUse(activePowerUpId);
         this.powerUpExecutor.executeTargetedPowerUp(activePowerUpId, gem.gridRow, gem.gridCol);
         return;
       }
     }
 
-    // Record drag start — resolved as drag or tap on pointermove/pointerup
     this.dragStartGem = gem;
     this.dragStartX = pointer.x;
     this.dragStartY = pointer.y;
   }
 
-  /** Scene-level pointermove: if the pointer has dragged far enough, execute a directional swap. */
   onScenePointerMove(pointer: Phaser.Input.Pointer): void {
+    if (this.powerDrawer?.isVisible) return;
     if (!this.dragStartGem || this.isSwapping || this.turnsRemaining <= 0) return;
 
     const dx = pointer.x - this.dragStartX;
@@ -770,147 +782,110 @@ export class GameScene extends Phaser.Scene implements GameContext {
     if (Math.sqrt(dx * dx + dy * dy) < GameScene.DRAG_THRESHOLD) return;
 
     const gem = this.dragStartGem;
-    this.dragStartGem = null; // consume to prevent re-entry
+    this.dragStartGem = null;
 
-    // Determine drag direction
     let targetRow = gem.gridRow;
     let targetCol = gem.gridCol;
-    if (Math.abs(dx) >= Math.abs(dy)) {
-      targetCol += dx > 0 ? 1 : -1;
-    } else {
-      targetRow += dy > 0 ? 1 : -1;
-    }
+    if (Math.abs(dx) >= Math.abs(dy)) targetCol += dx > 0 ? 1 : -1;
+    else targetRow += dy > 0 ? 1 : -1;
 
-    // Bounds check
     if (targetRow < 0 || targetRow >= this.grid.rows || targetCol < 0 || targetCol >= this.grid.cols) return;
+    if (this.grid.isEnemyTile(targetRow, targetCol)) return;
+
     const targetGem = this.grid.getGem(targetRow, targetCol);
     if (!targetGem) return;
 
-    // Hazard check — hazarded gems can't be moved
     if (
       this.hazardManager.hasHazard(gem.gridRow, gem.gridCol) ||
       this.hazardManager.hasHazard(targetRow, targetCol)
     ) return;
 
-    // Clear any pending tap-selection
-    if (this.selectedGem) {
-      this.selectedGem.deselect();
-      this.selectedGem = null;
-    }
-
+    if (this.selectedGem) { this.selectedGem.deselect(); this.selectedGem = null; }
     this.handleSwap(gem, targetGem);
   }
 
-  /** Scene-level pointerup: if movement was small it was a tap — route to onGemClick. */
   onScenePointerUp(pointer: Phaser.Input.Pointer): void {
+    if (this.powerDrawer?.isVisible) return;
+    if (pointer.y >= this.inventoryPanelY) return;  // inventory panel area
     if (!this.dragStartGem) return;
     const gem = this.dragStartGem;
     this.dragStartGem = null;
-
     const dx = pointer.x - this.dragStartX;
     const dy = pointer.y - this.dragStartY;
-    if (Math.sqrt(dx * dx + dy * dy) < GameScene.DRAG_THRESHOLD) {
-      this.onGemClick(gem);
-    }
+    if (Math.sqrt(dx * dx + dy * dy) < GameScene.DRAG_THRESHOLD) this.onGemClick(gem);
   }
 
   // ──────────────── DEBUG ────────────────
 
   setupDebugKeys(): void {
     if (!this.input.keyboard) return;
-
-    this.input.keyboard.on('keydown-D', () => {
-      this.toggleDebugGrid();
-    });
-
-    this.input.keyboard.on('keydown-R', () => {
-      this.resetGame();
-    });
-
+    this.input.keyboard.on('keydown-D', () => this.toggleDebugGrid());
+    this.input.keyboard.on('keydown-R', () => this.resetGame());
     this.input.keyboard.on('keydown-ESC', () => {
-      if (this.hudManager.getActivePowerUpId()) {
-        this.hudManager.cancelTargeting();
-      }
+      if (this.hudManager.getActivePowerUpId()) this.hudManager.cancelTargeting();
     });
   }
 
   toggleDebugGrid(): void {
-    if (!this.debugGraphics) {
-      this.debugGraphics = this.add.graphics();
-    }
-
+    if (!this.debugGraphics) this.debugGraphics = this.add.graphics();
     this.debugVisible = !this.debugVisible;
     this.debugGraphics.clear();
-
     if (!this.debugVisible) return;
 
     this.debugGraphics.lineStyle(1, 0x00ff00, 0.5);
     const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
-
     for (let row = 0; row <= GAME_CONFIG.gridRows; row++) {
       const y = GAME_CONFIG.gridOffsetY + row * cellSize;
-      this.debugGraphics.lineBetween(
-        GAME_CONFIG.gridOffsetX, y,
-        GAME_CONFIG.gridOffsetX + GAME_CONFIG.gridCols * cellSize, y,
-      );
+      this.debugGraphics.lineBetween(GAME_CONFIG.gridOffsetX, y, GAME_CONFIG.gridOffsetX + GAME_CONFIG.gridCols * cellSize, y);
     }
-
     for (let col = 0; col <= GAME_CONFIG.gridCols; col++) {
       const x = GAME_CONFIG.gridOffsetX + col * cellSize;
-      this.debugGraphics.lineBetween(
-        x, GAME_CONFIG.gridOffsetY,
-        x, GAME_CONFIG.gridOffsetY + GAME_CONFIG.gridRows * cellSize,
-      );
+      this.debugGraphics.lineBetween(x, GAME_CONFIG.gridOffsetY, x, GAME_CONFIG.gridOffsetY + GAME_CONFIG.gridRows * cellSize);
     }
   }
 
   createDebugButtons(): void {
-    // Positioned top-right, just below the HUD bar (y=0–80) + drain bar (y=76–80)
     const btnY = 90;
 
-    // "+100" button
     const addText = this.add.text(GAME_CONFIG.width - 130, btnY, '+100', {
-      fontSize: '14px',
-      color: '#888888',
-      fontFamily: 'Arial',
-      backgroundColor: '#222222',
-      padding: { x: 6, y: 4 },
+      fontSize: '14px', color: '#888888', fontFamily: 'Arial', backgroundColor: '#222222', padding: { x: 6, y: 4 },
     }).setOrigin(0.5, 0.5).setDepth(12);
     addText.setInteractive({ useHandCursor: true });
-    addText.on('pointerdown', () => {
-      this.essence += 100;
-      this.updateEssenceDisplay();
-    });
+    addText.on('pointerdown', () => { this.essence += 100; this.updateEssenceDisplay(); });
     addText.on('pointerover', () => addText.setColor('#ffffff'));
-    addText.on('pointerout', () => addText.setColor('#888888'));
+    addText.on('pointerout',  () => addText.setColor('#888888'));
 
-    // "Shop" button
     const shopText = this.add.text(GAME_CONFIG.width - 50, btnY, 'Shop', {
-      fontSize: '14px',
-      color: '#888888',
-      fontFamily: 'Arial',
-      backgroundColor: '#222222',
-      padding: { x: 6, y: 4 },
+      fontSize: '14px', color: '#888888', fontFamily: 'Arial', backgroundColor: '#222222', padding: { x: 6, y: 4 },
     }).setOrigin(0.5, 0.5).setDepth(12);
     shopText.setInteractive({ useHandCursor: true });
     shopText.on('pointerdown', () => {
-      this.turnsRemaining = 0;
-      this.hazardsCleared = true; // Debug: skip hazard check
+      // Debug: force-kill all enemies and end round
+      this.enemyManager.destroyAll();
+      this.updateEnemyDisplay();
       this.endRound();
     });
     shopText.on('pointerover', () => shopText.setColor('#ffffff'));
-    shopText.on('pointerout', () => shopText.setColor('#888888'));
+    shopText.on('pointerout',  () => shopText.setColor('#888888'));
+
+    if (DEBUG_CONFIG.debugStats) {
+      const statsText = this.add.text(GAME_CONFIG.width - 210, btnY, 'Stats', {
+        fontSize: '14px', color: '#aaaaaa', fontFamily: 'Arial', backgroundColor: '#1a1a2e', padding: { x: 6, y: 4 },
+      }).setOrigin(0.5, 0.5).setDepth(12);
+      statsText.setInteractive({ useHandCursor: true });
+      statsText.on('pointerdown', () => {
+        const json = StatsLogger.exportStats();
+        // Open in a prompt so the user can copy the JSON
+        window.prompt('Copy stats JSON:', json);
+      });
+      statsText.on('pointerover', () => statsText.setColor('#ffffff'));
+      statsText.on('pointerout',  () => statsText.setColor('#aaaaaa'));
+    }
   }
 
   resetGame(): void {
-    // Explicitly pass fresh run state to ensure full reset
     this.scene.start('GameScene', {
-      essence: 0,
-      score: 0,
-      round: 0,       // round <= 0 triggers reset path in initializeGame
-      ownedPowerUps: [],
-      powerSlotCount: 4,
-      passiveSlotCount: 2,
+      essence: 0, round: 0, ownedPowerUps: [], powerSlotCount: 4, passiveSlotCount: 2,
     });
   }
 }

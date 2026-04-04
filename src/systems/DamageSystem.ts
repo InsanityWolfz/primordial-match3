@@ -7,6 +7,7 @@ export interface DamageResult {
   destroyed: { row: number; col: number }[];
   damaged: { row: number; col: number; remainingHp: number }[];
   hazardsDestroyed: { row: number; col: number }[];
+  enemiesKilled: number;
   essenceGained: number;
 }
 
@@ -14,6 +15,7 @@ export class DamageSystem {
   private ctx: GameContext;
   private passiveManager!: PassiveManager;
   private onGemsDestroyedCb?: (count: number) => void;
+  private onHazardsDestroyedCb?: (count: number) => void;
 
   constructor(ctx: GameContext) {
     this.ctx = ctx;
@@ -23,30 +25,38 @@ export class DamageSystem {
     this.passiveManager = passiveManager;
   }
 
-  /** Wire up the gem-destruction count callback (used for A×B=C round bonus). */
+  /** Wire up the gem-destruction count callback (feeds per-round essence tracking). */
   setOnGemsDestroyed(cb: (count: number) => void): void {
     this.onGemsDestroyedCb = cb;
   }
 
+  /** Wire up the hazard-destruction count callback (feeds per-round stats tracking). */
+  setOnHazardsDestroyed(cb: (count: number) => void): void {
+    this.onHazardsDestroyedCb = cb;
+  }
+
   /**
-   * Central damage pipeline. All gem destruction should flow through here.
-   * Damage hits hazards first — if a hazard absorbs all damage, the gem is untouched.
-   * If the hazard breaks and there's remaining damage, it passes through to the gem.
+   * Central damage pipeline. All gem destruction flows through here.
+   *
+   * For each position:
+   *   1. If it's an enemy tile → deal full damage to that enemy
+   *   2. Else if it has a hazard → hazard absorbs damage first
+   *   3. Else if it has a gem → deal damage to the gem
    *
    * @param positions - Grid positions to deal damage to
-   * @param amount - Damage amount per position
-   * @param _element - Element type of the damage source (for future use)
-   * @returns DamageResult with destroyed/damaged positions and essence gained
+   * @param amount    - Damage per position
+   * @param element   - Element of the source (null = match damage)
    */
   async dealDamage(
     positions: { row: number; col: number }[],
     amount: number,
-    _element: string | null,
+    element: string | null,
   ): Promise<DamageResult> {
     const result: DamageResult = {
       destroyed: [],
       damaged: [],
       hazardsDestroyed: [],
+      enemiesKilled: 0,
       essenceGained: 0,
     };
 
@@ -54,6 +64,24 @@ export class DamageSystem {
     const hazardDestroyPromises: Promise<void>[] = [];
 
     for (const pos of positions) {
+      // ── Enemy tile — damage per tile hit ──
+      const enemy = this.ctx.grid.getEnemyAt(pos.row, pos.col);
+      if (enemy) {
+        if (enemy.hp > 0) { // only damage while still alive
+          const died = await this.ctx.enemyManager.damageEnemy(enemy, amount, element);
+          if (died) {
+            result.enemiesKilled++;
+            this.ctx.updateEnemyDisplay();
+          }
+          // Show floating damage number above the enemy tile
+          const ex = enemy.worldX + enemy.worldW / 2;
+          const ey = enemy.worldY + enemy.worldH / 2;
+          this.ctx.showDamageNumber(ex, ey, amount, true);
+        }
+        continue; // don't also process gem/hazard damage on this cell
+      }
+
+      // ── Normal gem cell ──
       const gem = this.ctx.grid.getGem(pos.row, pos.col);
       if (!gem) continue;
 
@@ -62,31 +90,27 @@ export class DamageSystem {
       // Hazard absorbs damage first
       const hazard = this.ctx.hazardManager.getHazard(pos.row, pos.col);
       if (hazard) {
-        // Power-immune hazards ignore power-up damage (element !== null)
-        if (hazard.def.powerImmune && _element !== null) {
-          continue; // Skip this position entirely
+        // Power-immune hazards ignore power damage (element !== null)
+        if (hazard.def.powerImmune && element !== null) {
+          continue;
         }
 
         const hazardHp = hazard.hp;
         const hazardDestroyed = hazard.takeDamage(remainingDamage);
         if (hazardDestroyed) {
           result.hazardsDestroyed.push(pos);
-          // Animate and then clear from grid
-          const p = pos; // capture for closure
-          const destroyedDef = hazard.def; // capture def for post-destroy effects
+          const p = pos;
+          const destroyedDef = hazard.def;
           hazardDestroyPromises.push(
             hazard.playDestroyAnimation(GAME_CONFIG.clearDuration).then(() => {
               this.ctx.hazardManager.clearPositions([p]);
-              // Energy Siphon: drain a charge from random active power
               if (destroyedDef.onDestroyDrainCharge) {
                 this.drainRandomCharge();
               }
             }),
           );
-          // Remaining damage passes through to gem
           remainingDamage = remainingDamage - hazardHp;
         } else {
-          // Hazard survived, all damage absorbed
           remainingDamage = 0;
         }
       }
@@ -99,7 +123,6 @@ export class DamageSystem {
         result.destroyed.push(pos);
         result.essenceGained++;
 
-        // Passive: element-specific bonus essence (Arsonist, Pirate, etc.)
         if (this.passiveManager) {
           const bonusResult = this.passiveManager.onGemDestroyed(gem.type.name);
           if (bonusResult.bonusEssence > 0) {
@@ -107,33 +130,26 @@ export class DamageSystem {
           }
         }
       } else {
-        result.damaged.push({
-          row: pos.row,
-          col: pos.col,
-          remainingHp: gem.hp,
-        });
+        result.damaged.push({ row: pos.row, col: pos.col, remainingHp: gem.hp });
         gem.playDamageFlash();
       }
     }
 
-    // Wait for hazard destroy animations
     if (hazardDestroyPromises.length > 0) {
       await Promise.all(hazardDestroyPromises);
+      if (result.hazardsDestroyed.length > 0) {
+        this.onHazardsDestroyedCb?.(result.hazardsDestroyed.length);
+      }
     }
 
-    // Animate destruction for killed gems
     if (toDestroy.length > 0) {
       const destroyPromises: Promise<void>[] = [];
       for (const pos of toDestroy) {
         const gem = this.ctx.grid.getGem(pos.row, pos.col);
-        if (gem) {
-          destroyPromises.push(gem.playDestroyAnimation(GAME_CONFIG.clearDuration));
-        }
+        if (gem) destroyPromises.push(gem.playDestroyAnimation(GAME_CONFIG.clearDuration));
       }
       await Promise.all(destroyPromises);
-
       this.ctx.grid.clearPositions(toDestroy);
-      // Report essence value (gems + passive bonuses) for A×B=C turn bonus
       this.onGemsDestroyedCb?.(result.essenceGained);
     }
 
@@ -141,13 +157,12 @@ export class DamageSystem {
   }
 
   /**
-   * Deal damage sequentially with visual delays (for chain-style effects).
-   * Each gem is damaged one at a time with optional stagger.
+   * Deal damage sequentially with visual stagger (for chain-style effects).
    */
   async dealDamageSequential(
     positions: { row: number; col: number }[],
     amount: number,
-    _element: string | null,
+    element: string | null,
     staggerInterval: number = 50,
     staggerGroupSize: number = 3,
   ): Promise<DamageResult> {
@@ -155,6 +170,7 @@ export class DamageSystem {
       destroyed: [],
       damaged: [],
       hazardsDestroyed: [],
+      enemiesKilled: 0,
       essenceGained: 0,
     };
 
@@ -162,18 +178,29 @@ export class DamageSystem {
 
     for (let i = 0; i < positions.length; i++) {
       const pos = positions[i];
+
+      // ── Enemy tile — damage per tile hit ──
+      const enemy = this.ctx.grid.getEnemyAt(pos.row, pos.col);
+      if (enemy) {
+        if (enemy.hp > 0) {
+          const died = await this.ctx.enemyManager.damageEnemy(enemy, amount, element);
+          if (died) {
+            result.enemiesKilled++;
+            this.ctx.updateEnemyDisplay();
+          }
+        }
+        continue;
+      }
+
+      // ── Normal gem cell ──
       const gem = this.ctx.grid.getGem(pos.row, pos.col);
       if (!gem) continue;
 
       let remainingDamage = amount;
 
-      // Hazard absorbs damage first
       const hazard = this.ctx.hazardManager.getHazard(pos.row, pos.col);
       if (hazard) {
-        // Power-immune hazards ignore power-up damage (element !== null)
-        if (hazard.def.powerImmune && _element !== null) {
-          continue; // Skip this position entirely
-        }
+        if (hazard.def.powerImmune && element !== null) continue;
 
         const hazardHp = hazard.hp;
         const hazardDestroyed = hazard.takeDamage(remainingDamage);
@@ -182,10 +209,7 @@ export class DamageSystem {
           const destroyedDef = hazard.def;
           await hazard.playDestroyAnimation(100);
           this.ctx.hazardManager.clearPositions([pos]);
-          // Energy Siphon: drain a charge from random active power
-          if (destroyedDef.onDestroyDrainCharge) {
-            this.drainRandomCharge();
-          }
+          if (destroyedDef.onDestroyDrainCharge) this.drainRandomCharge();
           remainingDamage = remainingDamage - hazardHp;
         } else {
           remainingDamage = 0;
@@ -199,21 +223,13 @@ export class DamageSystem {
           result.destroyed.push(pos);
           result.essenceGained++;
 
-          // Passive: element-specific bonus essence
           if (this.passiveManager) {
             const bonusResult = this.passiveManager.onGemDestroyed(gem.type.name);
-            if (bonusResult.bonusEssence > 0) {
-              result.essenceGained += bonusResult.bonusEssence;
-            }
+            if (bonusResult.bonusEssence > 0) result.essenceGained += bonusResult.bonusEssence;
           }
-
           gem.playDestroyAnimation(100);
         } else {
-          result.damaged.push({
-            row: pos.row,
-            col: pos.col,
-            remainingHp: gem.hp,
-          });
+          result.damaged.push({ row: pos.row, col: pos.col, remainingHp: gem.hp });
           gem.playDamageFlash();
         }
       }
@@ -223,13 +239,14 @@ export class DamageSystem {
       }
     }
 
-    // Wait for final animations
     await this.ctx.delay(150);
 
-    // Clear all destroyed positions
+    if (result.hazardsDestroyed.length > 0) {
+      this.onHazardsDestroyedCb?.(result.hazardsDestroyed.length);
+    }
+
     if (toDestroy.length > 0) {
       this.ctx.grid.clearPositions(toDestroy);
-      // Report essence value (gems + passive bonuses) for A×B=C turn bonus
       this.onGemsDestroyedCb?.(result.essenceGained);
     }
 
@@ -237,8 +254,7 @@ export class DamageSystem {
   }
 
   /**
-   * Energy Siphon effect: drain 1 charge from a random active power-up.
-   * If no active power has charges remaining, does nothing.
+   * Energy Siphon: drain 1 charge from a random active power-up.
    */
   private drainRandomCharge(): void {
     const activePowers = this.ctx.ownedPowerUps.filter(p => {
@@ -251,7 +267,6 @@ export class DamageSystem {
     const target = activePowers[Math.floor(Math.random() * activePowers.length)];
     target.charges = Math.max(0, target.charges - 1);
 
-    // Visual feedback — brief red flash on the screen
     const flash = this.ctx.phaserScene.add.graphics();
     flash.fillStyle(0xcc3366, 0.15);
     flash.fillRect(0, 0, GAME_CONFIG.width, GAME_CONFIG.height);

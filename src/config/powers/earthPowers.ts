@@ -3,21 +3,21 @@ import { generatePower20Levels, generatePassive5Levels, POWER_MILESTONES } from 
 
 // ─── EARTHQUAKE (activePower) ───
 // Shuffle + damage random gems. Target count scales with level.
-// Lv1: 12/1dmg → Lv5: 20/5dmg → Lv10: 32/10dmg → Lv15: 48/15dmg → Lv20: 64/20dmg
+// Lv1: 12/1dmg → Lv5: 20/1dmg → Lv10: 32/2dmg → Lv15: 48/2dmg → Lv20: 64/3dmg
 const earthquakeLevels = generatePower20Levels(
   [
     { targetCount: 12, damage: 1 },
-    { targetCount: 20, damage: 5 },
-    { targetCount: 32, damage: 10 },
-    { targetCount: 48, damage: 15 },
-    { targetCount: 64, damage: 20 },
+    { targetCount: 20, damage: 1 },
+    { targetCount: 32, damage: 2 },
+    { targetCount: 48, damage: 2 },
+    { targetCount: 64, damage: 3 },
   ],
   [
-    'Shuffle + hit 12 random gems, 1 damage',
-    'Shuffle + hit 20 random gems, 5 damage',
-    'Shuffle + hit 32 random gems, 10 damage',
-    'Shuffle + hit 48 random gems, 15 damage',
-    'Shuffle + hit entire board, 20 damage',
+    'Shuffle + hit 12 random tiles, 1 damage each',
+    'Shuffle + hit 20 random tiles, 1 damage each',
+    'Shuffle + hit 32 random tiles, 2 damage each',
+    'Shuffle + hit 48 random tiles, 2 damage each',
+    'Shuffle + hit entire board, 3 damage each',
   ],
   [1, 1, 2, 2, 3],
 );

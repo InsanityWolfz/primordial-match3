@@ -3,21 +3,21 @@ import { generatePower20Levels, generatePassive5Levels, POWER_MILESTONES } from 
 
 // ─── GUST (activePower) ───
 // Deal damage to entire rows
-// Lv1: 2 rows/1dmg → Lv5: 3 rows/5dmg → Lv10: 4 rows/10dmg → Lv15: 5 rows/15dmg → Lv20: 6 rows/20dmg
+// Lv1: 2 rows/1dmg → Lv5: 3 rows/1dmg → Lv10: 4 rows/2dmg → Lv15: 5 rows/2dmg → Lv20: 6 rows/3dmg
 const gustLevels = generatePower20Levels(
   [
     { rowCount: 2, damage: 1 },
-    { rowCount: 3, damage: 5 },
-    { rowCount: 4, damage: 10 },
-    { rowCount: 5, damage: 15 },
-    { rowCount: 6, damage: 20 },
+    { rowCount: 3, damage: 1 },
+    { rowCount: 4, damage: 2 },
+    { rowCount: 5, damage: 2 },
+    { rowCount: 6, damage: 3 },
   ],
   [
-    'Hit all gems in 2 random rows, 1 damage',
-    'Hit all gems in 3 random rows, 5 damage',
-    'Hit all gems in 4 random rows, 10 damage',
-    'Hit all gems in 5 random rows, 15 damage',
-    'Hit all gems in 6 random rows, 20 damage',
+    'Hit all tiles in 2 random rows, 1 damage each',
+    'Hit all tiles in 3 random rows, 1 damage each',
+    'Hit all tiles in 4 random rows, 2 damage each',
+    'Hit all tiles in 5 random rows, 2 damage each',
+    'Hit all tiles in 6 random rows, 3 damage each',
   ],
   [2, 2, 3, 3, 4],
 );
@@ -34,24 +34,24 @@ export const GUST: PowerUpDefinition = {
 
 // ─── WINDSLASH (passivePower) ───
 // Chance after match to hit random column
-// Lv1: 10%/1dmg → Lv5: 20%/5dmg → Lv10: 30%/10dmg → Lv15: 40%/15dmg → Lv20: 50%/20dmg
+// Lv1: 10%/1dmg → Lv5: 20%/1dmg → Lv10: 30%/1dmg → Lv15: 40%/2dmg → Lv20: 50%/2dmg
 const windslashLevels = generatePower20Levels(
   [
     { triggerChance: 10, damage: 1 },
-    { triggerChance: 20, damage: 5 },
-    { triggerChance: 30, damage: 10 },
-    { triggerChance: 40, damage: 15 },
-    { triggerChance: 50, damage: 20 },
+    { triggerChance: 20, damage: 1 },
+    { triggerChance: 30, damage: 1 },
+    { triggerChance: 40, damage: 2 },
+    { triggerChance: 50, damage: 2 },
   ],
   [
-    'After match: 10% chance to hit all gems in 1 random column, 1 damage',
-    'After match: 20% chance to hit all gems in 1 random column, 5 damage',
-    'After match: 30% chance to hit all gems in 1 random column, 10 damage',
-    'After match: 40% chance to hit all gems in 1 random column, 15 damage',
-    'After match: 50% chance to hit all gems in 1 random column, 20 damage',
+    'After match: 10% chance to hit all tiles in 1 random column, 1 damage',
+    'After match: 20% chance to hit all tiles in 1 random column, 1 damage',
+    'After match: 30% chance to hit all tiles in 1 random column, 1 damage',
+    'After match: 40% chance to hit all tiles in 1 random column, 2 damage',
+    'After match: 50% chance to hit all tiles in 1 random column, 2 damage',
   ],
   undefined, undefined,
-  (p) => `After match: ${p.triggerChance}% chance to hit all gems in 1 random column, ${p.damage} damage`,
+  (p) => `After match: ${p.triggerChance}% chance to hit all tiles in 1 random column, ${p.damage} damage`,
 );
 
 export const WINDSLASH: PowerUpDefinition = {

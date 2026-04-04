@@ -18,11 +18,16 @@ export interface HazardDefinition {
   onDestroyDrainCharge?: boolean; // Energy Siphon: drain 1 active charge on destroy
 }
 
+// Hard cap on total hazards placed per round across all types
+export const MAX_HAZARDS_PER_ROUND = 15;
+
 // ─── HAZARD DEFINITIONS ───
+// All counts scaled way down. Combined total across all types never exceeds 15.
+// Ice appears first (round 1), others introduced later.
 
 export const HAZARD_DEFINITIONS: HazardDefinition[] = [
   // ─── ICE ───
-  // Simple 1-HP hazard. Ramps up rounds 1-4, boss at round 5.
+  // 1-HP hazard. Starts small, never goes above 6 on its own.
   {
     id: 'ice',
     name: 'Ice',
@@ -30,59 +35,37 @@ export const HAZARD_DEFINITIONS: HazardDefinition[] = [
     color: 0x88ccff,
     blockSwap: true,
     roundEntries: [
-      { round: 1, min: 1, max: 3 },
-      { round: 2, min: 3, max: 5 },
-      { round: 3, min: 5, max: 8 },
-      { round: 4, min: 8, max: 12 },
-      { round: 5, min: 15, max: 20 },   // ICE BOSS
-      { round: 6, min: 3, max: 5 },
-      { round: 7, min: 4, max: 6 },
-      { round: 8, min: 4, max: 6 },
-      { round: 9, min: 5, max: 7 },
-      { round: 10, min: 0, max: 0 },     // Stone boss — no ice
-      { round: 11, min: 4, max: 6 },
-      { round: 12, min: 5, max: 7 },
-      { round: 13, min: 5, max: 7 },
-      { round: 14, min: 6, max: 8 },
-      { round: 15, min: 0, max: 0 },     // Thorn boss — no ice
-      { round: 16, min: 6, max: 8 },
-      { round: 17, min: 7, max: 9 },
-      { round: 18, min: 7, max: 9 },
-      { round: 19, min: 8, max: 10 },
-      { round: 20, min: 8, max: 10 },
+      { round: 1, min: 0, max: 2 },
+      { round: 2, min: 1, max: 3 },
+      { round: 3, min: 2, max: 4 },
+      { round: 5, min: 2, max: 5 },
+      { round: 8, min: 3, max: 6 },
+      { round: 12, min: 3, max: 6 },
+      { round: 16, min: 4, max: 6 },
+      { round: 20, min: 4, max: 6 },
     ],
   },
 
   // ─── STONE ───
-  // Tanky 5-HP hazard. Introduced round 6, boss at round 10.
+  // 3-HP hazard. Introduced round 5, stays low.
   {
     id: 'stone',
     name: 'Stone',
-    hp: 5,
+    hp: 3,
     color: 0x8b7355,
     blockSwap: true,
     roundEntries: [
-      { round: 6, min: 1, max: 3 },
-      { round: 7, min: 3, max: 5 },
-      { round: 8, min: 5, max: 8 },
-      { round: 9, min: 8, max: 12 },
-      { round: 10, min: 15, max: 20 },   // STONE BOSS
-      { round: 11, min: 3, max: 5 },
-      { round: 12, min: 4, max: 6 },
-      { round: 13, min: 5, max: 7 },
-      { round: 14, min: 5, max: 7 },
-      { round: 15, min: 0, max: 0 },     // Thorn boss — no stone
-      { round: 16, min: 5, max: 7 },
-      { round: 17, min: 6, max: 8 },
-      { round: 18, min: 6, max: 8 },
-      { round: 19, min: 7, max: 9 },
-      { round: 20, min: 7, max: 9 },
+      { round: 5, min: 0, max: 1 },
+      { round: 6, min: 1, max: 2 },
+      { round: 8, min: 1, max: 3 },
+      { round: 12, min: 2, max: 4 },
+      { round: 16, min: 2, max: 5 },
+      { round: 20, min: 3, max: 5 },
     ],
   },
 
   // ─── ANCIENT WARD ───
-  // 1 HP but immune to power-up damage and blocks swapping.
-  // Must be cleared by matching adjacent gems.
+  // 1 HP, immune to power damage. Introduced round 8.
   {
     id: 'ancientWard',
     name: 'Ancient Ward',
@@ -91,25 +74,16 @@ export const HAZARD_DEFINITIONS: HazardDefinition[] = [
     powerImmune: true,
     blockSwap: true,
     roundEntries: [
-      { round: 8, min: 1, max: 2 },
-      { round: 9, min: 2, max: 3 },
-      { round: 10, min: 0, max: 0 },     // Stone boss — no wards
-      { round: 11, min: 2, max: 4 },
-      { round: 12, min: 3, max: 5 },
-      { round: 13, min: 3, max: 5 },
-      { round: 14, min: 3, max: 5 },
-      { round: 15, min: 0, max: 0 },     // Thorn boss — no wards
-      { round: 16, min: 4, max: 6 },
-      { round: 17, min: 4, max: 6 },
-      { round: 18, min: 5, max: 7 },
-      { round: 19, min: 5, max: 7 },
-      { round: 20, min: 5, max: 7 },
+      { round: 8, min: 0, max: 1 },
+      { round: 10, min: 1, max: 2 },
+      { round: 14, min: 1, max: 3 },
+      { round: 18, min: 2, max: 4 },
+      { round: 20, min: 2, max: 4 },
     ],
   },
 
   // ─── THORN VINE ───
-  // 3 HP. Every 2 turns, each vine spreads to 1 adjacent gem.
-  // Exponential threat if ignored. Boss at round 15.
+  // 3 HP, spreads every 2 turns. Introduced round 10.
   {
     id: 'thornVine',
     name: 'Thorn Vine',
@@ -119,22 +93,16 @@ export const HAZARD_DEFINITIONS: HazardDefinition[] = [
     spreads: true,
     spreadInterval: 2,
     roundEntries: [
-      { round: 11, min: 1, max: 3 },
-      { round: 12, min: 3, max: 5 },
-      { round: 13, min: 5, max: 8 },
-      { round: 14, min: 8, max: 12 },
-      { round: 15, min: 15, max: 20 },   // THORN BOSS
-      { round: 16, min: 5, max: 8 },
-      { round: 17, min: 6, max: 9 },
-      { round: 18, min: 7, max: 10 },
-      { round: 19, min: 8, max: 11 },
-      { round: 20, min: 8, max: 11 },
+      { round: 10, min: 0, max: 1 },
+      { round: 12, min: 1, max: 2 },
+      { round: 15, min: 1, max: 3 },
+      { round: 18, min: 2, max: 4 },
+      { round: 20, min: 2, max: 4 },
     ],
   },
 
   // ─── ENERGY SIPHON ───
-  // 2 HP. On destroy, drains 1 charge from a random active power.
-  // No penalty if no charges remain.
+  // 2 HP. Drains 1 charge on destroy. Introduced round 12.
   {
     id: 'energySiphon',
     name: 'Energy Siphon',
@@ -142,15 +110,11 @@ export const HAZARD_DEFINITIONS: HazardDefinition[] = [
     color: 0xcc3366,
     onDestroyDrainCharge: true,
     roundEntries: [
-      { round: 12, min: 1, max: 2 },
-      { round: 13, min: 1, max: 3 },
-      { round: 14, min: 2, max: 3 },
-      { round: 15, min: 0, max: 0 },     // Thorn boss — no siphons
-      { round: 16, min: 3, max: 5 },
-      { round: 17, min: 3, max: 5 },
-      { round: 18, min: 4, max: 6 },
-      { round: 19, min: 4, max: 6 },
-      { round: 20, min: 5, max: 7 },
+      { round: 12, min: 0, max: 1 },
+      { round: 14, min: 1, max: 2 },
+      { round: 16, min: 1, max: 3 },
+      { round: 18, min: 2, max: 3 },
+      { round: 20, min: 2, max: 4 },
     ],
   },
 ];
@@ -163,8 +127,7 @@ export function getHazardDef(id: string): HazardDefinition | undefined {
 
 /**
  * Get the number of hazards of a given type to place for a given round.
- * Uses per-round entries with interpolation between defined rounds.
- * Returns a random value between min and max (inclusive).
+ * Interpolates between defined round entries.
  */
 export function getHazardCount(def: HazardDefinition, round: number): number {
   const entries = def.roundEntries;
@@ -179,12 +142,10 @@ export function getHazardCount(def: HazardDefinition, round: number): number {
     return randomBetween(exact.min, exact.max);
   }
 
-  // After last defined round — extrapolate with +1 min/max every 3 rounds
+  // After last defined round — use last entry values
   const last = entries[entries.length - 1];
   if (round > last.round) {
-    const roundsPast = round - last.round;
-    const bonus = Math.floor(roundsPast / 3);
-    return randomBetween(last.min + bonus, last.max + bonus);
+    return randomBetween(last.min, last.max);
   }
 
   // Between defined rounds — interpolate

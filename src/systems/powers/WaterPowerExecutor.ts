@@ -41,7 +41,7 @@ export class WaterPowerExecutor {
     const available: { row: number; col: number }[] = [];
     for (let r = 0; r < this.ctx.grid.rows; r++) {
       for (let c = 0; c < this.ctx.grid.cols; c++) {
-        if (this.ctx.grid.getGem(r, c)) available.push({ row: r, col: c });
+        if (this.ctx.grid.getGem(r, c) || this.ctx.grid.isEnemyTile(r, c)) available.push({ row: r, col: c });
       }
     }
 
@@ -72,10 +72,7 @@ export class WaterPowerExecutor {
       onComplete: () => splash.destroy(),
     });
 
-    const result = await this.damageSystem.dealDamage(targets, damage, 'water');
-
-    this.ctx.score += result.destroyed.length * GAME_CONFIG.scorePerGem;
-    this.ctx.updateScoreDisplay();
+    await this.damageSystem.dealDamage(targets, damage, 'water');
 
     // Refill board after destroying gems
     await this.cascadeSystem.applyGravityAndSpawn();
@@ -107,7 +104,7 @@ export class WaterPowerExecutor {
     const available: { row: number; col: number }[] = [];
     for (let r = 0; r < this.ctx.grid.rows; r++) {
       for (let c = 0; c < this.ctx.grid.cols; c++) {
-        if (this.ctx.grid.getGem(r, c)) available.push({ row: r, col: c });
+        if (this.ctx.grid.getGem(r, c) || this.ctx.grid.isEnemyTile(r, c)) available.push({ row: r, col: c });
       }
     }
 
@@ -138,10 +135,8 @@ export class WaterPowerExecutor {
       onComplete: () => splash.destroy(),
     });
 
-    const result = await this.damageSystem.dealDamage(targets, damage, 'water');
+    await this.damageSystem.dealDamage(targets, damage, 'water');
 
-    this.ctx.score += result.destroyed.length * GAME_CONFIG.scorePerGem;
-    this.ctx.updateScoreDisplay();
     return true;
   }
 }

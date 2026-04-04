@@ -10,7 +10,10 @@ export class CascadeSystem {
   private executePostMatchPassives: (matchPositions: { row: number; col: number }[]) => Promise<void>;
   private damageSystem!: DamageSystem;
   private passiveManager!: PassiveManager;
-  private onMatchThreeCb?: () => void;
+
+  // Per-round essence tracking callbacks
+  private onMatchGroupCb?: (element: string, size: number) => void;
+  private onGemsDestroyedCb?: (count: number) => void;
 
   constructor(ctx: GameContext, executePostMatchPassives: (matchPositions: { row: number; col: number }[]) => Promise<void>) {
     this.ctx = ctx;
@@ -25,18 +28,31 @@ export class CascadeSystem {
     this.passiveManager = passiveManager;
   }
 
-  /** Wire up the match count callback — fires for any match (3+) for A×B=C turn bonus. */
-  setOnMatchThree(cb: () => void): void {
-    this.onMatchThreeCb = cb;
+  /**
+   * Called for each match group (element + size).
+   * Used for charge refunds and per-round essence multiplier tracking.
+   */
+  setOnMatchGroup(cb: (element: string, size: number) => void): void {
+    this.onMatchGroupCb = cb;
+  }
+
+  /** Called with total gem count destroyed in a match wave. */
+  setOnGemsDestroyed(cb: (count: number) => void): void {
+    this.onGemsDestroyedCb = cb;
   }
 
   async processCascade(matches: { row: number; col: number }[], cascadeLevel: number): Promise<void> {
-    // Calculate score with cascade multiplier
-    const multiplier = Math.pow(GAME_CONFIG.cascadeMultiplier, cascadeLevel - 1);
-    const points = Math.round(matches.length * GAME_CONFIG.scorePerGem * multiplier);
+    // Identify match groups for charge refunds and multiplier tracking
+    const groups = this.ctx.grid.findMatchGroups(
+      (r, c) => this.ctx.hazardManager.hasHazard(r, c),
+    );
 
-    // Passive: match completed bonuses (Wild Growth, Elemental Resonance, etc.)
-    // Cascade wave bonus and CASCADE passive removed — A×B=C turn bonus handles essence income.
+    // Fire per-group callbacks (charge refund + essence multiplier)
+    for (const group of groups) {
+      this.onMatchGroupCb?.(group.element, group.size);
+    }
+
+    // Passive: match completed bonuses
     if (this.passiveManager) {
       const matchElement = matches.length > 0
         ? (this.ctx.grid.getGem(matches[0].row, matches[0].col)?.type.name ?? '')
@@ -48,16 +64,15 @@ export class CascadeSystem {
       }
     }
 
-    this.ctx.score += points;
-    this.ctx.updateScoreDisplay();
+    // Destroy matched gems (DamageSystem handles animation + grid clearing)
+    const damageResult = await this.damageSystem.dealDamage(matches, 1, null);
 
-    // Track any valid match (3+) for A×B=C turn bonus
-    if (matches.length >= 3) this.onMatchThreeCb?.();
+    // Report gem count for per-round essence accumulation
+    if (damageResult.essenceGained > 0) {
+      this.onGemsDestroyedCb?.(damageResult.essenceGained);
+    }
 
-    // DamageSystem handles destruction, essence, and clearing
-    await this.damageSystem.dealDamage(matches, 1, null);
-
-    // Adjacent matches deal 1 damage to neighboring hazards
+    // Adjacent matches deal 1 instance of damage to neighbouring hazards
     const destroyedHazards = await this.ctx.hazardManager.damageAdjacentHazards(matches);
 
     // Passive: Combustion triggers on hazard destroy
@@ -68,12 +83,11 @@ export class CascadeSystem {
     }
 
     // Post-match passive powers (Splash, Windslash, Capacitor)
-    // Pass match positions so Capacitor can chain to adjacent gems
     await this.executePostMatchPassives(matches);
 
     await this.applyGravityAndSpawn();
 
-    // Use hazard-aware match finding
+    // Check for cascades
     const newMatches = this.ctx.findMatches();
     if (newMatches.length > 0) {
       await this.processCascade(newMatches, cascadeLevel + 1);
@@ -83,14 +97,12 @@ export class CascadeSystem {
   async applyGravityAndSpawn(): Promise<void> {
     const gravityMoves = this.ctx.grid.applyGravity();
     if (gravityMoves.length > 0) {
-      // Move hazards to follow their gems
       this.ctx.hazardManager.applyGravity(gravityMoves);
 
       const fallPromises = gravityMoves.map((move) => {
         const targetPos = move.gem.getWorldPosition();
         return move.gem.moveTo(targetPos.x, targetPos.y, GAME_CONFIG.fallDuration);
       });
-      // Also animate hazards falling
       const hazardFallPromises = this.ctx.hazardManager.animateGravity(gravityMoves);
       await Promise.all([...fallPromises, ...hazardFallPromises]);
     }
@@ -102,14 +114,23 @@ export class CascadeSystem {
     const emptyColumns = this.ctx.grid.countEmptyTop();
     const fallPromises: Promise<void>[] = [];
 
-    for (const { col, count } of emptyColumns) {
+    for (const { col, count, rows } of emptyColumns) {
       for (let i = 0; i < count; i++) {
-        const row = count - 1 - i;
+        const row = rows[i]; // actual empty row — may be below enemy tiles
+
+        // Skip if this row is an enemy tile (safety guard)
+        if (this.ctx.grid.isEnemyTile(row, col)) continue;
+
         const gemType = this.ctx.getRandomGemType();
         const gem = new Gem(this.ctx.phaserScene, row, col, gemType, GAME_CONFIG.gemSize);
 
-        const spawnY = GAME_CONFIG.gridOffsetY - (i + 1) * (GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding);
-        gem.sprite.setPosition(gem.sprite.x, spawnY);
+        // Maybe spawn as hazard (dynamic hazard chance)
+        const hazardSpawned = this.ctx.hazardManager.maybeSpawnHazardOnGem(row, col, gem);
+        if (!hazardSpawned) {
+          // Normal spawn — position above grid and animate falling
+          const spawnY = GAME_CONFIG.gridOffsetY - (i + 1) * (GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding);
+          gem.sprite.setPosition(gem.sprite.x, spawnY);
+        }
 
         this.ctx.grid.setGem(row, col, gem);
         gem.sprite.on('pointerdown', (pointer: Phaser.Input.Pointer) => this.ctx.onGemPointerDown(gem, pointer));
@@ -125,7 +146,6 @@ export class CascadeSystem {
   async clearInitialMatches(): Promise<void> {
     this.ctx.isSwapping = true;
 
-    // clearInitialMatches runs before hazards are placed, so no hazard awareness needed
     let matches = this.ctx.grid.findMatches();
     while (matches.length > 0) {
       const clearPromises: Promise<void>[] = [];

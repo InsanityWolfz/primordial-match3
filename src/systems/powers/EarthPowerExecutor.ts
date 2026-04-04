@@ -1,4 +1,3 @@
-import { GAME_CONFIG } from '../../config/gameConfig.ts';
 import { Gem } from '../../entities/Gem.ts';
 import type { GameContext } from '../../types/GameContext.ts';
 import type { CascadeSystem } from '../CascadeSystem.ts';
@@ -46,27 +45,30 @@ export class EarthPowerExecutor {
     // Release hazard-gem associations before shuffle so gems restore full alpha
     this.ctx.hazardManager.releaseAllGems();
 
-    // Collect all gems and shuffle them (Fisher-Yates)
-    const allGems: Gem[] = [];
+    // Collect all non-enemy positions and the gems on them
+    const nonEnemyPositions: { row: number; col: number }[] = [];
+    const allGems: (Gem | null)[] = [];
     for (let r = 0; r < this.ctx.grid.rows; r++) {
       for (let c = 0; c < this.ctx.grid.cols; c++) {
-        const gem = this.ctx.grid.getGem(r, c);
-        if (gem) allGems.push(gem);
+        if (this.ctx.grid.isEnemyTile(r, c)) continue;
+        nonEnemyPositions.push({ row: r, col: c });
+        allGems.push(this.ctx.grid.getGem(r, c));
       }
     }
 
+    // Fisher-Yates shuffle on the gems array
     for (let i = allGems.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [allGems[i], allGems[j]] = [allGems[j], allGems[i]];
     }
 
-    // Reassign positions (shuffle the board)
-    let idx = 0;
+    // Reassign gems back to the same non-enemy positions
     const movePromises: Promise<void>[] = [];
-    for (let r = 0; r < this.ctx.grid.rows; r++) {
-      for (let c = 0; c < this.ctx.grid.cols; c++) {
-        const gem = allGems[idx++];
-        this.ctx.grid.setGem(r, c, gem);
+    for (let i = 0; i < nonEnemyPositions.length; i++) {
+      const { row: r, col: c } = nonEnemyPositions[i];
+      const gem = allGems[i];
+      this.ctx.grid.setGem(r, c, gem);
+      if (gem) {
         gem.setGridPosition(r, c);
         const pos = gem.getWorldPosition();
         movePromises.push(gem.moveTo(pos.x, pos.y, 400));
@@ -83,7 +85,7 @@ export class EarthPowerExecutor {
       const allPositions: { row: number; col: number }[] = [];
       for (let r = 0; r < this.ctx.grid.rows; r++) {
         for (let c = 0; c < this.ctx.grid.cols; c++) {
-          if (this.ctx.grid.getGem(r, c)) {
+          if (this.ctx.grid.getGem(r, c) || this.ctx.grid.isEnemyTile(r, c)) {
             allPositions.push({ row: r, col: c });
           }
         }
@@ -97,8 +99,6 @@ export class EarthPowerExecutor {
       const targets = allPositions.slice(0, targetCount);
 
       const result = await this.damageSystem.dealDamage(targets, damage, 'earth');
-      this.ctx.score += result.destroyed.length * GAME_CONFIG.scorePerGem;
-      this.ctx.updateScoreDisplay();
 
       if (result.destroyed.length > 0) {
         await this.cascadeSystem.applyGravityAndSpawn();

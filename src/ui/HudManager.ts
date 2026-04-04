@@ -3,6 +3,7 @@ import { GAME_CONFIG } from '../config/gameConfig.ts';
 import { getPowerUpDef } from '../config/powerUps.ts';
 import type { OwnedPowerUp } from '../types/RunState.ts';
 import { InventoryBar } from './InventoryBar.ts';
+import { PowerDrawer } from './PowerDrawer.ts';
 
 export class HudManager {
   private scene: Phaser.Scene;
@@ -11,6 +12,7 @@ export class HudManager {
   private powerUpStatusText: Phaser.GameObjects.Text | null = null;
   private targetingOverlay: Phaser.GameObjects.Graphics | null = null;
   private inventoryBar: InventoryBar | null = null;
+  private drawer: PowerDrawer | null = null;
 
   // Callbacks
   private onActivate: (id: string, needsTarget: boolean) => void;
@@ -41,13 +43,23 @@ export class HudManager {
     this.inventoryBar = bar;
   }
 
+  /** Wire up the PowerDrawer so this manager can open/close it. */
+  setDrawer(drawer: PowerDrawer): void {
+    this.drawer = drawer;
+  }
+
   getActivePowerUpId(): string | null {
     return this.activePowerUpId;
   }
 
+  /** Open the detail drawer. */
+  openDrawer(): void {
+    this.drawer?.open();
+  }
+
   /**
    * Activate or toggle a power-up by ID.
-   * Called from InventoryBar card clicks (via onActivatePowerUp callback).
+   * Called from chip tray taps and drawer ACTIVATE buttons.
    */
   activateById(id: string): void {
     if (this.getIsSwapping()) return;
@@ -75,30 +87,31 @@ export class HudManager {
     const def = getPowerUpDef(id)!;
     const needsTarget = def.needsTarget ?? false;
     const message = needsTarget
-      ? `${def.name}: Click a gem to target  (ESC to cancel)`
+      ? `${def.name}: Tap a tile to target  (tap again to cancel)`
       : `${def.name}: Activating...`;
 
     this.powerUpStatusText = this.scene.add.text(
       GAME_CONFIG.width / 2,
       GAME_CONFIG.gridOffsetY - 30,
       message,
-      { fontSize: '16px', color: '#ffcc00', fontFamily: 'Arial' },
+      { fontSize: '15px', color: '#ffcc00', fontFamily: 'Arial' },
     );
     this.powerUpStatusText.setOrigin(0.5, 0.5);
 
-    // Highlight the card in the inventory bar
+    // Highlight the chip in the tray
     this.inventoryBar?.setActiveCard(id);
 
     // Notify GameScene (fires executeNonTargetedPowerUp if !needsTarget)
     this.onActivate(id, needsTarget);
   }
 
-  /** Refresh charge display after a power-up is used. */
+  /** Refresh charge display after a power-up is used or charges change. */
   updateHudCharges(): void {
     this.inventoryBar?.refresh(this.ownedPowerUps);
+    this.drawer?.refreshData(this.ownedPowerUps);
   }
 
-  /** Flash a card briefly to show it just fired (active or passive). */
+  /** Flash a chip/card briefly to show it just fired (active or passive). */
   flashCard(id: string): void {
     this.inventoryBar?.flashCard(id);
   }

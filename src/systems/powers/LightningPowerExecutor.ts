@@ -65,7 +65,7 @@ export class LightningPowerExecutor {
       if (
         this.ctx.grid.isValidPosition(nr, nc) &&
         !visited.has(key) &&
-        this.ctx.grid.getGem(nr, nc)
+        (this.ctx.grid.getGem(nr, nc) || this.ctx.grid.isEnemyTile(nr, nc))
       ) {
         visited.add(key);
         positions.push({ row: nr, col: nc });
@@ -90,7 +90,7 @@ export class LightningPowerExecutor {
                 const wr = oppositeRow + ddr;
                 const wc = oppositeCol + ddc;
                 const wKey = `${wr},${wc}`;
-                if (this.ctx.grid.isValidPosition(wr, wc) && !visited.has(wKey) && this.ctx.grid.getGem(wr, wc)) {
+                if (this.ctx.grid.isValidPosition(wr, wc) && !visited.has(wKey) && (this.ctx.grid.getGem(wr, wc) || this.ctx.grid.isEnemyTile(wr, wc))) {
                   warpTarget = { row: wr, col: wc };
                 }
               }
@@ -137,10 +137,7 @@ export class LightningPowerExecutor {
       onComplete: () => lightning.destroy(),
     });
 
-    const result = await this.damageSystem.dealDamageSequential(positions, damage, 'lightning', 50, 3);
-
-    this.ctx.score += result.destroyed.length * GAME_CONFIG.scorePerGem;
-    this.ctx.updateScoreDisplay();
+    await this.damageSystem.dealDamageSequential(positions, damage, 'lightning', 50, 3);
 
     await this.cascadeSystem.applyGravityAndSpawn();
 
@@ -182,7 +179,7 @@ export class LightningPowerExecutor {
           const nr = pos.row + dr;
           const nc = pos.col + dc;
           const key = `${nr},${nc}`;
-          if (!visited.has(key) && this.ctx.grid.isValidPosition(nr, nc) && this.ctx.grid.getGem(nr, nc)) {
+          if (!visited.has(key) && this.ctx.grid.isValidPosition(nr, nc) && (this.ctx.grid.getGem(nr, nc) || this.ctx.grid.isEnemyTile(nr, nc))) {
             visited.add(key);
             targets.push({ row: nr, col: nc });
             nextFrontier.push({ row: nr, col: nc });
@@ -196,7 +193,7 @@ export class LightningPowerExecutor {
     if (targets.length === 0) {
       for (let r = 0; r < this.ctx.grid.rows; r++) {
         for (let c = 0; c < this.ctx.grid.cols; c++) {
-          if (this.ctx.grid.getGem(r, c)) targets.push({ row: r, col: c });
+          if (this.ctx.grid.getGem(r, c) || this.ctx.grid.isEnemyTile(r, c)) targets.push({ row: r, col: c });
         }
       }
       for (let i = targets.length - 1; i > 0; i--) {
@@ -231,10 +228,8 @@ export class LightningPowerExecutor {
       onComplete: () => lightning.destroy(),
     });
 
-    const result = await this.damageSystem.dealDamageSequential(limitedTargets, damage, 'lightning', 30, 2);
+    await this.damageSystem.dealDamageSequential(limitedTargets, damage, 'lightning', 30, 2);
 
-    this.ctx.score += result.destroyed.length * GAME_CONFIG.scorePerGem;
-    this.ctx.updateScoreDisplay();
     return true;
   }
 }

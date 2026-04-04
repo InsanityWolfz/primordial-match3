@@ -3,21 +3,21 @@ import { generatePower20Levels, generatePassive5Levels, POWER_MILESTONES } from 
 
 // ─── LIGHTNING (activePower) ───
 // Chain gems in cardinal directions from target
-// Lv1: chain 9/1dmg → Lv5: 14/5dmg → Lv10: 21/10dmg → Lv15: 32/15dmg → Lv20: 50/20dmg
+// Lv1: chain 9/1dmg → Lv5: 14/1dmg → Lv10: 21/2dmg → Lv15: 32/2dmg → Lv20: 50/3dmg
 const lightningLevels = generatePower20Levels(
   [
-    { chainCount: 9, damage: 1 },
-    { chainCount: 14, damage: 5 },
-    { chainCount: 21, damage: 10 },
-    { chainCount: 32, damage: 15 },
-    { chainCount: 50, damage: 20 },
+    { chainCount: 9,  damage: 1 },
+    { chainCount: 14, damage: 1 },
+    { chainCount: 21, damage: 2 },
+    { chainCount: 32, damage: 2 },
+    { chainCount: 50, damage: 3 },
   ],
   [
-    'Chain damage through 9 gems in a zig-zag path, 1 damage',
-    'Chain damage through 14 gems in a zig-zag path, 5 damage',
-    'Chain damage through 21 gems in a zig-zag path, 10 damage',
-    'Chain damage through 32 gems in a zig-zag path, 15 damage',
-    'Chain damage through 50 gems in a zig-zag path, 20 damage',
+    'Chain through 9 tiles in a zig-zag path, 1 damage each',
+    'Chain through 14 tiles in a zig-zag path, 1 damage each',
+    'Chain through 21 tiles in a zig-zag path, 2 damage each',
+    'Chain through 32 tiles in a zig-zag path, 2 damage each',
+    'Chain through 50 tiles in a zig-zag path, 3 damage each',
   ],
   [2, 2, 3, 3, 4],
 );
@@ -35,24 +35,24 @@ export const LIGHTNING: PowerUpDefinition = {
 
 // ─── CAPACITOR (passivePower) ───
 // Match triggers chain for extra gems
-// Lv1: 1/1dmg → Lv5: 3/5dmg → Lv10: 6/10dmg → Lv15: 10/15dmg → Lv20: 15/20dmg
+// Lv1: 1/1dmg → Lv5: 3/1dmg → Lv10: 6/1dmg → Lv15: 10/2dmg → Lv20: 15/2dmg
 const capacitorLevels = generatePower20Levels(
   [
-    { chainCount: 1, damage: 1 },
-    { chainCount: 3, damage: 5 },
-    { chainCount: 6, damage: 10 },
-    { chainCount: 10, damage: 15 },
-    { chainCount: 15, damage: 20 },
+    { chainCount: 1,  damage: 1 },
+    { chainCount: 3,  damage: 1 },
+    { chainCount: 6,  damage: 1 },
+    { chainCount: 10, damage: 2 },
+    { chainCount: 15, damage: 2 },
   ],
   [
-    'After match: zap 1 random gem, 1 damage',
-    'After match: zap 3 random gems, 5 damage',
-    'After match: zap 6 random gems, 10 damage',
-    'After match: zap 10 random gems, 15 damage',
-    'After match: zap 15 random gems, 20 damage',
+    'After match: zap 1 random tile, 1 damage',
+    'After match: zap 3 random tiles, 1 damage each',
+    'After match: zap 6 random tiles, 1 damage each',
+    'After match: zap 10 random tiles, 2 damage each',
+    'After match: zap 15 random tiles, 2 damage each',
   ],
   undefined, undefined,
-  (p) => `After match: zap ${p.chainCount} random gem${p.chainCount !== 1 ? 's' : ''}, ${p.damage} damage`,
+  (p) => `After match: zap ${p.chainCount} random tile${p.chainCount !== 1 ? 's' : ''}, ${p.damage} damage each`,
 );
 
 export const CAPACITOR: PowerUpDefinition = {

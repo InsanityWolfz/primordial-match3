@@ -53,7 +53,7 @@ export class AirPowerExecutor {
     const addRow = (row: number) => {
       for (let c = 0; c < this.ctx.grid.cols; c++) {
         const key = `${row},${c}`;
-        if (!posSet.has(key) && this.ctx.grid.getGem(row, c)) {
+        if (!posSet.has(key) && (this.ctx.grid.getGem(row, c) || this.ctx.grid.isEnemyTile(row, c))) {
           posSet.add(key);
           positions.push({ row, col: c });
         }
@@ -81,10 +81,7 @@ export class AirPowerExecutor {
       onComplete: () => flash.destroy(),
     });
 
-    const result = await this.damageSystem.dealDamage(positions, damage, 'air');
-
-    this.ctx.score += result.destroyed.length * GAME_CONFIG.scorePerGem;
-    this.ctx.updateScoreDisplay();
+    await this.damageSystem.dealDamage(positions, damage, 'air');
 
     await this.cascadeSystem.applyGravityAndSpawn();
 
@@ -119,7 +116,7 @@ export class AirPowerExecutor {
     const col = Math.floor(Math.random() * this.ctx.grid.cols);
     const positions: { row: number; col: number }[] = [];
     for (let r = 0; r < this.ctx.grid.rows; r++) {
-      if (this.ctx.grid.getGem(r, col)) {
+      if (this.ctx.grid.getGem(r, col) || this.ctx.grid.isEnemyTile(r, col)) {
         positions.push({ row: r, col });
       }
     }
@@ -144,10 +141,8 @@ export class AirPowerExecutor {
       onComplete: () => flash.destroy(),
     });
 
-    const result = await this.damageSystem.dealDamage(positions, damage, 'air');
+    await this.damageSystem.dealDamage(positions, damage, 'air');
 
-    this.ctx.score += result.destroyed.length * GAME_CONFIG.scorePerGem;
-    this.ctx.updateScoreDisplay();
     return true;
   }
 }

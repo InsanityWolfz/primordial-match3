@@ -1,9 +1,10 @@
 import type Phaser from 'phaser';
 import { Hazard } from '../entities/Hazard.ts';
-import { HAZARD_DEFINITIONS, getHazardCount } from '../config/hazardConfig.ts';
+import { HAZARD_DEFINITIONS, MAX_HAZARDS_PER_ROUND, getHazardCount } from '../config/hazardConfig.ts';
 import type { HazardDefinition } from '../config/hazardConfig.ts';
 import type { Grid } from '../entities/Grid.ts';
 import { GAME_CONFIG } from '../config/gameConfig.ts';
+import type { Gem } from '../entities/Gem.ts';
 
 export class HazardManager {
   private scene: Phaser.Scene;
@@ -13,6 +14,9 @@ export class HazardManager {
   readonly cols: number;
   private totalPlacedThisRound = 0;
   private turnCounter = 0;
+  // Modifier overrides — set by GameScene when a round modifier is active
+  maxHazards: number = MAX_HAZARDS_PER_ROUND;
+  spawnRateMultiplier: number = 1.0;
 
   constructor(scene: Phaser.Scene, grid: Grid) {
     this.scene = scene;
@@ -20,7 +24,6 @@ export class HazardManager {
     this.rows = grid.rows;
     this.cols = grid.cols;
 
-    // Initialize empty hazard grid
     this.hazardGrid = [];
     for (let r = 0; r < this.rows; r++) {
       this.hazardGrid[r] = [];
@@ -42,18 +45,11 @@ export class HazardManager {
     return this.hazardGrid[row][col];
   }
 
-  /**
-   * Check if a position has a hazard that blocks swapping (e.g., Ancient Ward).
-   */
   hasBlockingHazard(row: number, col: number): boolean {
     const hazard = this.getHazard(row, col);
     return hazard !== null && hazard.def.blockSwap === true;
   }
 
-  /**
-   * Release all hazard gem references, restoring gem alphas to full.
-   * Call before earthquake shuffle so gems can be repositioned safely.
-   */
   releaseAllGems(): void {
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
@@ -63,10 +59,6 @@ export class HazardManager {
     }
   }
 
-  /**
-   * Re-associate each hazard with the gem now at its grid position.
-   * Call after earthquake shuffle so hazards dim the correct gems.
-   */
   reassociateGems(): void {
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
@@ -79,9 +71,6 @@ export class HazardManager {
     }
   }
 
-  /**
-   * Count remaining hazards on the board.
-   */
   getRemainingCount(): number {
     let count = 0;
     for (let r = 0; r < this.rows; r++) {
@@ -92,36 +81,40 @@ export class HazardManager {
     return count;
   }
 
-  // ─── Placement ───
-
-  /**
-   * Place hazards for the start of a round.
-   * Avoids placing on positions that already have hazards.
-   */
-  placeHazards(round: number): void {
-    this.totalPlacedThisRound = 0;
-    this.turnCounter = 0;
-    for (const def of HAZARD_DEFINITIONS) {
-      const count = getHazardCount(def, round);
-      if (count <= 0) continue;
-      this.placeHazardType(def, count);
-    }
-    this.totalPlacedThisRound = this.getRemainingCount();
-  }
-
-  /**
-   * Get total hazards placed at the start of this round.
-   */
   getTotalPlaced(): number {
     return this.totalPlacedThisRound;
   }
 
-  private placeHazardType(def: HazardDefinition, count: number): void {
-    // Collect available positions (has gem, no existing hazard)
+  // ─── Placement ───
+
+  /**
+   * Place hazards for round start. Total across all types is capped at MAX_HAZARDS_PER_ROUND.
+   * Hazards are never placed on enemy tiles.
+   */
+  placeHazards(round: number): void {
+    this.totalPlacedThisRound = 0;
+    this.turnCounter = 0;
+
+    let totalPlaced = 0;
+
+    for (const def of HAZARD_DEFINITIONS) {
+      if (totalPlaced >= this.maxHazards) break;
+      const want = getHazardCount(def, round);
+      if (want <= 0) continue;
+      const canPlace = Math.min(want, this.maxHazards - totalPlaced);
+      const placed = this.placeHazardType(def, canPlace);
+      totalPlaced += placed;
+    }
+
+    this.totalPlacedThisRound = this.getRemainingCount();
+  }
+
+  private placeHazardType(def: HazardDefinition, count: number): number {
+    // Available: has gem, no hazard, not an enemy tile
     const available: { row: number; col: number }[] = [];
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
-        if (this.grid.getGem(r, c) && !this.hazardGrid[r][c]) {
+        if (this.grid.getGem(r, c) && !this.hazardGrid[r][c] && !this.grid.isEnemyTile(r, c)) {
           available.push({ row: r, col: c });
         }
       }
@@ -141,15 +134,45 @@ export class HazardManager {
       const gem = this.grid.getGem(pos.row, pos.col);
       if (gem) hazard.setGem(gem);
     }
+    return toPlace;
+  }
+
+  /**
+   * Dynamic hazard spawning: called when a new gem is placed on the board.
+   * Chance = currentHazardCount × 0.5% (0.005).
+   * Returns true if the gem was converted to a hazard (so spawn logic can skip animating it normally).
+   */
+  maybeSpawnHazardOnGem(row: number, col: number, gem: Gem): boolean {
+    const currentCount = this.getRemainingCount();
+    if (currentCount >= this.maxHazards) return false;
+    if (currentCount === 0) return false; // no hazards on board = no spawn pressure
+
+    const chance = currentCount * 0.005 * this.spawnRateMultiplier;
+    if (Math.random() >= chance) return false;
+
+    // Pick a random eligible hazard type for this round
+    // Only use hazard types that are already present on the board
+    const presentTypes = new Set<string>();
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        const h = this.hazardGrid[r][c];
+        if (h) presentTypes.add(h.def.id);
+      }
+    }
+
+    if (presentTypes.size === 0) return false;
+
+    const eligibleDefs = HAZARD_DEFINITIONS.filter(d => presentTypes.has(d.id));
+    const def = eligibleDefs[Math.floor(Math.random() * eligibleDefs.length)];
+
+    const hazard = new Hazard(this.scene, row, col, def);
+    this.hazardGrid[row][col] = hazard;
+    hazard.setGem(gem);
+    return true;
   }
 
   // ─── Damage ───
 
-  /**
-   * Deal damage to a hazard at a position.
-   * Returns true if the hazard was destroyed.
-   * Returns false if the hazard survived or there was no hazard.
-   */
   async damageHazard(row: number, col: number, amount: number): Promise<boolean> {
     const hazard = this.hazardGrid[row][col];
     if (!hazard) return false;
@@ -163,11 +186,6 @@ export class HazardManager {
     return false;
   }
 
-  /**
-   * Deal 1 damage to hazards adjacent to the given positions.
-   * Used after matches to chip away at neighboring hazards.
-   * Returns positions of destroyed hazards.
-   */
   async damageAdjacentHazards(
     matchPositions: { row: number; col: number }[],
   ): Promise<{ row: number; col: number }[]> {
@@ -180,7 +198,6 @@ export class HazardManager {
         const nr = pos.row + dr;
         const nc = pos.col + dc;
         const key = `${nr},${nc}`;
-        // Only count adjacent cells that have hazards and weren't themselves matched
         if (!matchSet.has(key) && this.hasHazard(nr, nc)) {
           adjacentHazards.add(key);
         }
@@ -194,9 +211,7 @@ export class HazardManager {
       const [r, c] = key.split(',').map(Number);
       damagePromises.push(
         this.damageHazard(r, c, 1).then(destroyed => {
-          if (destroyed) {
-            destroyedPositions.push({ row: r, col: c });
-          }
+          if (destroyed) destroyedPositions.push({ row: r, col: c });
         }),
       );
     }
@@ -207,13 +222,7 @@ export class HazardManager {
 
   // ─── Gravity support ───
 
-  /**
-   * Move hazards down to follow their gems during gravity.
-   * Call this AFTER grid.applyGravity() so gems have their new positions.
-   * Hazards follow the gem they were covering.
-   */
   applyGravity(gemMoves: { gem: { gridRow: number; gridCol: number }; fromRow: number; toRow: number; col: number }[]): void {
-    // Process moves from bottom to top to avoid overwriting
     const sortedMoves = [...gemMoves].sort((a, b) => b.toRow - a.toRow);
 
     for (const move of sortedMoves) {
@@ -226,9 +235,6 @@ export class HazardManager {
     }
   }
 
-  /**
-   * Animate hazards falling to match their gems.
-   */
   animateGravity(gemMoves: { gem: { gridRow: number; gridCol: number }; fromRow: number; toRow: number; col: number }[]): Promise<void>[] {
     const promises: Promise<void>[] = [];
     for (const move of gemMoves) {
@@ -245,10 +251,6 @@ export class HazardManager {
 
   // ─── Clearing ───
 
-  /**
-   * Remove hazards at destroyed gem positions.
-   * Called when gems are destroyed (the hazard breaks with the gem).
-   */
   clearPositions(positions: { row: number; col: number }[]): void {
     for (const pos of positions) {
       const hazard = this.hazardGrid[pos.row]?.[pos.col];
@@ -259,9 +261,6 @@ export class HazardManager {
     }
   }
 
-  /**
-   * Destroy all hazards (for scene cleanup).
-   */
   destroyAll(): void {
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
@@ -276,15 +275,10 @@ export class HazardManager {
 
   // ─── Turn-based behaviors ───
 
-  /**
-   * Called at the end of each turn. Handles thorn vine spreading.
-   * Returns the number of new hazards spawned.
-   */
   async processTurnEnd(): Promise<number> {
     this.turnCounter++;
     let spawned = 0;
 
-    // Collect all spreading hazards that should trigger this turn
     const spreaders: Hazard[] = [];
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
@@ -300,18 +294,21 @@ export class HazardManager {
 
     if (spreaders.length === 0) return 0;
 
-    // Each spreader tries to spread to 1 random adjacent cell
+    // Check total cap before spreading
     const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
     const newHazards: Hazard[] = [];
 
     for (const spreader of spreaders) {
+      if (this.getRemainingCount() >= this.maxHazards) break;
+
       const candidates: { row: number; col: number }[] = [];
       for (const [dr, dc] of dirs) {
         const nr = spreader.gridRow + dr;
         const nc = spreader.gridCol + dc;
         if (
           nr >= 0 && nr < this.rows && nc >= 0 && nc < this.cols &&
-          this.grid.getGem(nr, nc) && !this.hazardGrid[nr][nc]
+          this.grid.getGem(nr, nc) && !this.hazardGrid[nr][nc] &&
+          !this.grid.isEnemyTile(nr, nc)
         ) {
           candidates.push({ row: nr, col: nc });
         }
@@ -319,7 +316,6 @@ export class HazardManager {
 
       if (candidates.length === 0) continue;
 
-      // Pick random adjacent cell
       const target = candidates[Math.floor(Math.random() * candidates.length)];
       const newHazard = new Hazard(this.scene, target.row, target.col, spreader.def, spreader.hp);
       this.hazardGrid[target.row][target.col] = newHazard;
@@ -329,7 +325,6 @@ export class HazardManager {
       spawned++;
     }
 
-    // Animate the new hazards appearing (brief pulse)
     if (newHazards.length > 0) {
       this.totalPlacedThisRound += newHazards.length;
       for (const hazard of newHazards) {
@@ -350,7 +345,6 @@ export class HazardManager {
           });
         }
       }
-      // Wait for animations
       await new Promise<void>(resolve => {
         this.scene.time.delayedCall(350, () => resolve());
       });

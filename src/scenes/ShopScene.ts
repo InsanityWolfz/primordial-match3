@@ -5,6 +5,7 @@ import { POWER_UPS, getPowerUpDef } from '../config/powerUps.ts';
 import { SHOP_CONFIG, getPowerSlotCost, getPassiveSlotCost } from '../config/shopConfig.ts';
 import { ShopCardRenderer } from '../ui/ShopCardRenderer.ts';
 import { InventoryBar } from '../ui/InventoryBar.ts';
+import { rollModifier } from '../config/roundModifiers.ts';
 
 export class ShopScene extends Phaser.Scene {
   runState!: RunState;
@@ -47,6 +48,13 @@ export class ShopScene extends Phaser.Scene {
     this.seenPowerIds = new Set();
     this.seenPassiveIds = new Set();
     this.rerollCost = SHOP_CONFIG.rerollCost; // reset escalation each shop visit
+
+    // Roll the modifier for the next round (round 1 always gets null)
+    const nextRound = this.runState.round;
+    const rolledMod = rollModifier(nextRound);
+    this.runState.currentModifier = rolledMod
+      ? { id: rolledMod.id, name: rolledMod.name, description: rolledMod.description }
+      : null;
 
     this.drawBackground();
     this.drawHUDBar();
@@ -151,12 +159,12 @@ export class ShopScene extends Phaser.Scene {
       fontSize: '32px', color: '#ffffff', fontFamily: 'Arial', fontStyle: 'bold',
     }).setOrigin(0.5, 0).setDepth(11);
 
-    // SCORE section (center)
-    this.add.text(360, 12, 'SCORE', {
+    // ESSENCE section (center)
+    this.add.text(360, 12, 'ESSENCE', {
       fontSize: '11px', color: '#6666aa', fontFamily: 'Arial', fontStyle: 'bold',
     }).setOrigin(0.5, 0).setDepth(11);
 
-    this.add.text(360, 28, `${this.runState.score}`, {
+    this.add.text(360, 28, `${this.runState.essence}`, {
       fontSize: '32px', color: '#ffffff', fontFamily: 'Arial', fontStyle: 'bold',
     }).setOrigin(0.5, 0).setDepth(11);
 
@@ -283,6 +291,10 @@ export class ShopScene extends Phaser.Scene {
     // ─── Reroll button ───
     this.drawRerollButton(curY);
     curY += 44;
+
+    // ─── Modifier preview ───
+    this.drawModifierPreview(curY);
+    curY += 56;
 
     // ─── Next round button ───
     this.drawNextRoundButton(curY);
@@ -545,6 +557,28 @@ export class ShopScene extends Phaser.Scene {
 
   // ──────────────── NEXT ROUND BUTTON ────────────────
 
+  private drawModifierPreview(y: number): void {
+    const cx = GAME_CONFIG.width / 2;
+    const mod = this.runState.currentModifier;
+
+    if (mod) {
+      const label = this.add.text(cx, y, `⚡ ${mod.name}`, {
+        fontSize: '15px', color: '#ffcc44', fontFamily: 'Arial', fontStyle: 'bold',
+      }).setOrigin(0.5, 0).setDepth(70);
+      this.nextRoundObjects.push(label);
+
+      const desc = this.add.text(cx, y + 20, mod.description, {
+        fontSize: '12px', color: '#ccaa44', fontFamily: 'Arial',
+      }).setOrigin(0.5, 0).setDepth(70);
+      this.nextRoundObjects.push(desc);
+    } else {
+      const label = this.add.text(cx, y + 10, 'No special conditions next round', {
+        fontSize: '12px', color: '#444455', fontFamily: 'Arial',
+      }).setOrigin(0.5, 0).setDepth(70);
+      this.nextRoundObjects.push(label);
+    }
+  }
+
   private drawNextRoundButton(y: number): void {
     this.destroyGroup(this.nextRoundObjects);
     this.nextRoundObjects = [];
@@ -665,10 +699,11 @@ export class ShopScene extends Phaser.Scene {
     const nextState: RunState = {
       essence: this.runState.essence,
       round: this.runState.round + 1,
-      score: this.runState.score,
       ownedPowerUps: refreshedPowerUps,
       powerSlotCount: this.runState.powerSlotCount,
       passiveSlotCount: this.runState.passiveSlotCount,
+      runId: this.runState.runId,
+      currentModifier: this.runState.currentModifier,
     };
 
     this.scene.start('GameScene', nextState);
