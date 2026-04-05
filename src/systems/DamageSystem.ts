@@ -91,11 +91,6 @@ export class DamageSystem {
       // Hazard absorbs damage first
       const hazard = this.ctx.hazardManager.getHazard(pos.row, pos.col);
       if (hazard) {
-        // Power-immune hazards ignore power damage (element !== null)
-        if (hazard.def.powerImmune && element !== null) {
-          continue;
-        }
-
         const hazardHp = hazard.hp;
         const hazardDestroyed = hazard.takeDamage(remainingDamage);
         if (hazardDestroyed) {
@@ -207,8 +202,6 @@ export class DamageSystem {
 
       const hazard = this.ctx.hazardManager.getHazard(pos.row, pos.col);
       if (hazard) {
-        if (hazard.def.powerImmune && element !== null) continue;
-
         const hazardHp = hazard.hp;
         const hazardDestroyed = hazard.takeDamage(remainingDamage);
         if (hazardDestroyed) {

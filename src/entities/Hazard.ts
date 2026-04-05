@@ -10,7 +10,6 @@ export class Hazard {
     stone:        'hazard-stone',
     thornVine:    'hazard-thornVine',
     energySiphon: 'hazard-energySiphon',
-    ancientWard:  'hazard-ancientWard',
   };
 
   scene: Phaser.Scene;
@@ -139,34 +138,6 @@ export class Hazard {
 
       // Thick border
       graphics.lineStyle(3, this.def.color, 0.9);
-      graphics.strokeRect(-half, -half, GAME_CONFIG.gemSize, GAME_CONFIG.gemSize);
-
-    } else if (this.def.id === 'ancientWard') {
-      // Ancient Ward: mystical purple overlay with rune marks
-      graphics.fillStyle(this.def.color, 0.2);
-      graphics.fillRect(-half, -half, GAME_CONFIG.gemSize, GAME_CONFIG.gemSize);
-
-      // Rune-like cross marks
-      graphics.lineStyle(2, this.def.color, 0.7);
-      const runeSize = 8;
-      const runePositions = [
-        { x: 0, y: 0 }, { x: -16, y: -14 }, { x: 16, y: -14 },
-        { x: -16, y: 14 }, { x: 16, y: 14 },
-      ];
-      for (const rune of runePositions) {
-        // Small X marks
-        graphics.lineBetween(
-          rune.x - runeSize / 2, rune.y - runeSize / 2,
-          rune.x + runeSize / 2, rune.y + runeSize / 2,
-        );
-        graphics.lineBetween(
-          rune.x + runeSize / 2, rune.y - runeSize / 2,
-          rune.x - runeSize / 2, rune.y + runeSize / 2,
-        );
-      }
-
-      // Glowing border
-      graphics.lineStyle(2, this.def.color, 0.9);
       graphics.strokeRect(-half, -half, GAME_CONFIG.gemSize, GAME_CONFIG.gemSize);
 
     } else if (this.def.id === 'thornVine') {

@@ -11,8 +11,7 @@ export interface HazardDefinition {
   color: number;
   roundEntries: HazardRoundEntry[];
   // Special behavior flags
-  powerImmune?: boolean;        // Ancient Ward: can't be damaged by power-ups
-  blockSwap?: boolean;          // Ancient Ward: gem can't be swapped
+  blockSwap?: boolean;          // Gem can't be swapped while hazard is present
   spreads?: boolean;            // Thorn Vine: spreads to adjacent gems
   spreadInterval?: number;      // Thorn Vine: turns between spreads (default 2)
   onDestroyDrainCharge?: boolean; // Energy Siphon: drain 1 active charge on destroy
@@ -61,24 +60,6 @@ export const HAZARD_DEFINITIONS: HazardDefinition[] = [
       { round: 12, min: 2, max: 4 },
       { round: 16, min: 2, max: 5 },
       { round: 20, min: 3, max: 5 },
-    ],
-  },
-
-  // ─── ANCIENT WARD ───
-  // 1 HP, immune to power damage. Introduced round 8.
-  {
-    id: 'ancientWard',
-    name: 'Ancient Ward',
-    hp: 1,
-    color: 0x9966cc,
-    powerImmune: true,
-    blockSwap: true,
-    roundEntries: [
-      { round: 8, min: 0, max: 1 },
-      { round: 10, min: 1, max: 2 },
-      { round: 14, min: 1, max: 3 },
-      { round: 18, min: 2, max: 4 },
-      { round: 20, min: 2, max: 4 },
     ],
   },
 

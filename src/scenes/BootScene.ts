@@ -13,7 +13,6 @@ export class BootScene extends Phaser.Scene {
     this.load.image('hazard-stone',       'assets/sprites/hazard-stone.png');
     this.load.image('hazard-thornVine',   'assets/sprites/hazard-vines.png');
     this.load.image('hazard-energySiphon','assets/sprites/hazard-energysiphon.png');
-    this.load.image('hazard-ancientWard', 'assets/sprites/hazard-ancientward.png');
 
     // Enemy sprites
     this.load.image('enemy-fireImp',        'assets/sprites/enemy_fireImp.png');
