@@ -44,6 +44,13 @@ No test runner is configured. TypeScript strict mode is on (`noUnusedLocals`, `n
 
 Balance changes belong in config files, not in system logic.
 
+## Planned Next Features
+
+- **Meta powers** — cross-run upgrades or persistent unlocks that carry over between runs
+- **Fusion powers** — combining two elements to create hybrid power-ups
+- **Bosses** — special high-HP enemies with unique mechanics, likely at milestone rounds
+- **Stages** — distinct themed areas with their own enemy pools, modifiers, and progression
+
 ### Roguelike Loop
 
 Each **round** = 15 turns. **Essence** is the currency (earned per match, tracked with multipliers via `CascadeSystem` callbacks). Between rounds: `ShopScene` offers powers/passives/slot upgrades using essence. **Power slots** are shared between active powers and passives (start 4, max 8); **passive slots** are stat-only (start 2, max 8).

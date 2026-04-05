@@ -17,7 +17,7 @@ export const SHOP_CONFIG = {
     powers: 3,     // number of activePower + passivePower cards shown
     passives: 2,   // number of stat passive cards shown
   },
-  rerollCost: 10,
+  rerollCost: 500,
   questSlots: 2,   // placeholder for future quest system
 
   // Layout constants (720px wide portrait)

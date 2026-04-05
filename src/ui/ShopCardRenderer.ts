@@ -64,7 +64,7 @@ export class ShopCardRenderer {
       actionLabel = 'No slots';
     } else {
       cost = def.levels[currentLevel].cost;
-      actionLabel = currentLevel === 0 ? `Buy: ${cost}` : `Upgrade: ${cost}`;
+      actionLabel = `◆ ${cost}`;
     }
 
     const affordable = canAfford && !isMaxLevel && !blocked;
@@ -181,10 +181,10 @@ export class ShopCardRenderer {
       pillBorderAlpha = 0.7;
       pillTextColor = '#883333';
     } else if (affordable) {
-      pillFill = 0x1a4a1a;
-      pillBorderColor = 0x44aa44;
+      pillFill = 0x1a1a33;
+      pillBorderColor = 0x4444aa;
       pillBorderAlpha = 0.9;
-      pillTextColor = '#44ff44';
+      pillTextColor = '#aabbff';
     } else {
       pillFill = 0x1a1a1a;
       pillBorderColor = 0x333333;
@@ -219,9 +219,9 @@ export class ShopCardRenderer {
         bg.lineStyle(2, elementColor, 1);
         bg.strokeRoundedRect(x, y, w, h, 8);
         pillBg.clear();
-        pillBg.fillStyle(0x226622, 1);
+        pillBg.fillStyle(0x222244, 1);
         pillBg.fillRoundedRect(pillX, pillBY, pillW, pillH, 13);
-        pillBg.lineStyle(1, 0x66ee66, 1);
+        pillBg.lineStyle(1, 0x6688ff, 1);
         pillBg.strokeRoundedRect(pillX, pillBY, pillW, pillH, 13);
       });
 
@@ -232,9 +232,9 @@ export class ShopCardRenderer {
         bg.lineStyle(2, borderColor, 0.8);
         bg.strokeRoundedRect(x, y, w, h, 8);
         pillBg.clear();
-        pillBg.fillStyle(0x1a4a1a, 1);
+        pillBg.fillStyle(0x1a1a33, 1);
         pillBg.fillRoundedRect(pillX, pillBY, pillW, pillH, 13);
-        pillBg.lineStyle(1, 0x44aa44, 0.9);
+        pillBg.lineStyle(1, 0x4444aa, 0.9);
         pillBg.strokeRoundedRect(pillX, pillBY, pillW, pillH, 13);
       });
 
