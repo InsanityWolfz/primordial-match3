@@ -311,6 +311,12 @@ export class GameScene extends Phaser.Scene implements GameContext {
     });
     this.inventoryBar.create();
     this.hudManager.setInventoryBar(this.inventoryBar);
+
+    // Explicitly destroy the inventory bar when this scene shuts down,
+    // so its objects don't bleed into ShopScene or FailScene.
+    this.events.once('shutdown', () => {
+      this.inventoryBar.destroy();
+    });
   }
 
   // ──────────────── GameContext UI ────────────────
@@ -741,7 +747,9 @@ export class GameScene extends Phaser.Scene implements GameContext {
   }
 
   private onShopButtonClick(): void {
-    if (!this.enemyManager.allEnemiesDead() || this.isSwapping) return;
+    // Hard guard — never allow endRound unless enemies are truly cleared
+    if (!this.enemyManager.allEnemiesDead()) return;
+    if (this.isSwapping) return;
     this.endRound();
   }
 

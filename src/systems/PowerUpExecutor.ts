@@ -146,16 +146,20 @@ export class PowerUpExecutor {
    * If all enemies are dead, go to shop regardless.
    */
   private async checkEndCondition(): Promise<void> {
+    // Win: enemies cleared by a power — advance to shop regardless of turns left
     if (this.ctx.enemyManager.allEnemiesDead()) {
       await this.endRound();
       return;
     }
 
-    const hasCharges = this.ctx.ownedPowerUps.some(p => p.charges > 0);
-    if (!hasCharges) {
-      await this.endRound();
+    // Lose: only when turns AND charges are both exhausted
+    // If turns remain the player can still make matches, so never lose mid-turn
+    if (this.ctx.turnsRemaining <= 0) {
+      const hasCharges = this.ctx.ownedPowerUps.some(p => p.charges > 0);
+      if (!hasCharges) {
+        await this.endRound();
+      }
     }
-    // Otherwise: turns = 0 but has charges — keep playing
   }
 
   // ──────────────── PASSIVE POWER TRIGGERS ────────────────
