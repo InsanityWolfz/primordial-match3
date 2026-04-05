@@ -5,13 +5,11 @@ import { POWER_UPS, getPowerUpDef } from '../config/powerUps.ts';
 import type { PowerUpDefinition } from '../config/powerUpConfig.ts';
 import { SHOP_CONFIG, getPowerSlotCost, getPassiveSlotCost } from '../config/shopConfig.ts';
 import { ShopCardRenderer } from '../ui/ShopCardRenderer.ts';
-import { InventoryBar } from '../ui/InventoryBar.ts';
 import { rollModifier } from '../config/roundModifiers.ts';
 
 export class ShopScene extends Phaser.Scene {
   runState!: RunState;
   private cardRenderer!: ShopCardRenderer;
-  private inventoryBar!: InventoryBar;
   private essenceValueText!: Phaser.GameObjects.Text;
   private hudEssenceText!: Phaser.GameObjects.Text;
 
@@ -61,10 +59,6 @@ export class ShopScene extends Phaser.Scene {
     this.rollDiscoverItems();
     this.drawAllSections();
 
-    const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
-    const gridBottom = GAME_CONFIG.gridOffsetY + GAME_CONFIG.gridRows * cellSize;
-    this.inventoryBar = new InventoryBar(this, this.runState.ownedPowerUps, gridBottom + 8);
-    this.inventoryBar.create();
   }
 
   // ── BACKGROUND ──────────────────────────────────────────────────────────────
@@ -856,7 +850,6 @@ export class ShopScene extends Phaser.Scene {
     this.nextRoundObjects = [];
 
     this.drawAllSections();
-    this.inventoryBar.refresh(this.runState.ownedPowerUps);
   }
 
   // ── HELPERS ──────────────────────────────────────────────────────────────────

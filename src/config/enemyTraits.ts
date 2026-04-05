@@ -3,7 +3,7 @@
 // Traits are introduced at specific rounds and their probability scales up slowly.
 // High variance is intentional — you might face a rough combination or an easy one.
 
-export type EnemyTrait = 'armored' | 'shielded' | 'regenerating' | 'warded' | 'splitting';
+export type EnemyTrait = 'armored' | 'shielded' | 'regenerating' | 'warded';
 
 // Round at which each trait first appears
 export const TRAIT_INTRO_ROUND: Record<EnemyTrait, number> = {
@@ -11,7 +11,6 @@ export const TRAIT_INTRO_ROUND: Record<EnemyTrait, number> = {
   shielded:     6,
   regenerating: 8,
   warded:       10,
-  splitting:    12,
 };
 
 // Colors for the badge rendered on the enemy rectangle (top-right corner)
@@ -20,7 +19,6 @@ export const TRAIT_BADGE_COLOR: Record<EnemyTrait, number> = {
   shielded:     0xffdd00, // gold (active) — changes to 0x444444 when used
   regenerating: 0x44cc44, // green
   warded:       0xffffff, // overridden with element color at placement time
-  splitting:    0xff8800, // orange
 };
 
 export const TRAIT_BADGE_USED_COLOR: Record<EnemyTrait, number> = {
@@ -28,7 +26,6 @@ export const TRAIT_BADGE_USED_COLOR: Record<EnemyTrait, number> = {
   shielded:     0x444444, // darkened when shield is spent
   regenerating: 0x44cc44,
   warded:       0x444444,
-  splitting:    0xff8800,
 };
 
 // Trait descriptions for UI/tooltip use
@@ -37,7 +34,6 @@ export const TRAIT_DESCRIPTION: Record<EnemyTrait, string> = {
   shielded:     'Absorbs the first hit entirely',
   regenerating: 'Recovers 1 HP at end of each turn',
   warded:       'Immune to damage from one element',
-  splitting:    'Spawns two 1×1 enemies when killed',
 };
 
 /**

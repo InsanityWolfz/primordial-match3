@@ -670,12 +670,10 @@ export class GameScene extends Phaser.Scene implements GameContext {
   }
 
   // Bonus essence for turns the player didn't need after clearing enemies.
-  // Based on the current gems-per-turn rate projected over remaining turns.
+  // Flat rate: round * 20 * turns remaining — predictable and scales with progression.
   private calcTurnBonus(): number {
-    const turnsUsed = GAME_CONFIG.turnsPerRound - this.turnsRemaining;
-    if (turnsUsed <= 0 || this.turnsRemaining <= 0) return 0;
-    const gemsPerTurn = this.roundGemsDestroyed / turnsUsed;
-    return Math.floor(gemsPerTurn * this.turnsRemaining * this.calcEssenceMultiplier() * this.essenceMultiplier);
+    if (this.turnsRemaining <= 0) return 0;
+    return this.round * 20 * this.turnsRemaining;
   }
 
   // +8% per match-3 / +20% per match-4 / +50% per match-5 (additive, no runaway stacking)

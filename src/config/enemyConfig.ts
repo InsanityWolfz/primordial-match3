@@ -12,6 +12,13 @@ export interface RoundEnemies {
   enemies: EnemyDef[];
 }
 
+/**
+ * The round at which both enemy layout and hazard counts hit their caps.
+ * From this round onward, enemy HP is multiplied by 1.5 for each additional round.
+ * e.g. round 21 → ×1.5, round 22 → ×2.25, round 23 → ×3.375 ...
+ */
+export const ENEMY_SCALE_START_ROUND = 20;
+
 // Round definitions. For rounds not listed, the last entry is used (clamped).
 const ROUND_ENEMIES: Record<number, EnemyDef[]> = {
   1:  [{ widthInCells: 1, heightInCells: 2 }],                                           // 2 tiles

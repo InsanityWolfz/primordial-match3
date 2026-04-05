@@ -92,10 +92,8 @@ export class PowerUpExecutor {
     this.onActionComplete();
     this.ctx.isSwapping = false;
 
-    // Check lose condition: turns exhausted AND no charges left
-    if (this.ctx.turnsRemaining <= 0) {
-      await this.checkEndCondition();
-    }
+    // Always check: auto-win if enemies dead, auto-lose if turns+charges exhausted
+    await this.checkEndCondition();
   }
 
   async executeTargetedPowerUp(id: string, row: number, col: number): Promise<void> {
@@ -138,10 +136,8 @@ export class PowerUpExecutor {
     this.onActionComplete();
     this.ctx.isSwapping = false;
 
-    // Check lose condition after every power use
-    if (this.ctx.turnsRemaining <= 0) {
-      await this.checkEndCondition();
-    }
+    // Always check: auto-win if enemies dead, auto-lose if turns+charges exhausted
+    await this.checkEndCondition();
   }
 
   /**

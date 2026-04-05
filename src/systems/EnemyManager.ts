@@ -1,6 +1,6 @@
 import type Phaser from 'phaser';
 import { Enemy } from '../entities/Enemy.ts';
-import { getEnemiesForRound, ENEMY_COLORS } from '../config/enemyConfig.ts';
+import { getEnemiesForRound, ENEMY_COLORS, ENEMY_SCALE_START_ROUND } from '../config/enemyConfig.ts';
 import type { Grid } from '../entities/Grid.ts';
 import { GAME_CONFIG } from '../config/gameConfig.ts';
 import { rollTrait } from '../config/enemyTraits.ts';
@@ -75,13 +75,19 @@ export class EnemyManager {
 
     if (candidates.length === 0) return false;
 
+    const effectiveRound = round ?? this.currentRound;
+
+    // Late-game HP scaling: 1.5× per round beyond the cap
+    const hpMultiplier = effectiveRound > ENEMY_SCALE_START_ROUND
+      ? Math.pow(1.5, effectiveRound - ENEMY_SCALE_START_ROUND)
+      : 1;
+
     // Pick random candidate
     const pos = candidates[Math.floor(Math.random() * candidates.length)];
-    const enemy = new Enemy(this.scene, pos.row, pos.col, w, h, color);
+    const enemy = new Enemy(this.scene, pos.row, pos.col, w, h, color, hpMultiplier);
 
     // Roll trait (if a round is supplied and traits are enabled for this round)
-    const r = round ?? this.currentRound;
-    const trait = rollTrait(r);
+    const trait = rollTrait(effectiveRound);
     if (trait) {
       let wardedElement: string | undefined;
       if (trait === 'warded') {
@@ -152,9 +158,6 @@ export class EnemyManager {
   }
 
   private async removeEnemy(enemy: Enemy): Promise<void> {
-    const hadSplitting = enemy.trait === 'splitting';
-    const parentColor = enemy.color;
-
     // Clear grid overlay tiles
     this.grid.clearEnemyTiles(enemy);
 
@@ -165,27 +168,6 @@ export class EnemyManager {
     // Remove from list
     const idx = this.enemies.indexOf(enemy);
     if (idx >= 0) this.enemies.splice(idx, 1);
-
-    // Splitting: spawn up to 2 × 1×1 child enemies in adjacent positions
-    if (hadSplitting) {
-      this.spawnSplitChildren(enemy.gridRow, enemy.gridCol, enemy.widthInCells, enemy.heightInCells, parentColor);
-    }
-  }
-
-  /**
-   * Spawn up to 2 × 1×1 child enemies anywhere on the board.
-   * Children roll their own traits from the current round (can chain-split).
-   */
-  private spawnSplitChildren(
-    _parentRow: number, _parentCol: number,
-    _parentW: number, _parentH: number,
-    color: number,
-  ): void {
-    // Simply try to place 2 small enemies anywhere valid on the board.
-    // tryPlaceEnemy picks its own random position from all valid spots.
-    for (let i = 0; i < 2; i++) {
-      this.tryPlaceEnemy(1, 1, color, this.currentRound);
-    }
   }
 
   /**

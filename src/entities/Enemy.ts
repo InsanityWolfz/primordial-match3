@@ -53,6 +53,7 @@ export class Enemy {
     widthInCells: number,
     heightInCells: number,
     color: number,
+    hpMultiplier: number = 1,
   ) {
     this.scene = scene;
     this.gridRow = gridRow;
@@ -61,8 +62,8 @@ export class Enemy {
     this.heightInCells = heightInCells;
     this.color = color;
 
-    // HP = total tiles covered × 2 HP per tile
-    this.maxHp = widthInCells * heightInCells * 2;
+    // HP = total tiles covered × 2, scaled by late-game multiplier
+    this.maxHp = Math.ceil(widthInCells * heightInCells * 2 * hpMultiplier);
     this.hp = this.maxHp;
 
     const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
