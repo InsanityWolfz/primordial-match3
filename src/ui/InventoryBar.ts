@@ -21,7 +21,7 @@ interface CircleData {
   cx:            number;
   cy:            number;
   isActiveTarget: boolean;
-  hasCharges:    boolean;
+  hasBase:       boolean;
 }
 
 /**
@@ -179,9 +179,10 @@ export class InventoryBar {
     const def        = getPowerUpDef(owned.powerUpId);
     if (!def) return;
 
-    const gemType    = GAME_CONFIG.gemTypes.find(g => g.name === def.element);
-    const color      = gemType?.color ?? 0x888888;
-    const hasCharges = (owned.charges ?? 0) > 0;
+    const gemType  = GAME_CONFIG.gemTypes.find(g => g.name === def.element);
+    const color    = gemType?.color ?? 0x888888;
+    const hasBase  = owned.base > 0;
+    const mult     = Math.max(1, owned.multiplierPool);
 
     // Circle fill
     const circleBg = this.scene.add.graphics();
@@ -194,35 +195,44 @@ export class InventoryBar {
     this.paintCircle(circleBg, ring, cx, cy, color, false, false);
     this.elements.push(circleBg, ring);
 
-    // Dim overlay when depleted
-    if (!hasCharges) {
+    // Dim overlay when no base damage
+    if (!hasBase) {
       const overlay = this.scene.add.graphics().setDepth(53);
       overlay.fillStyle(0x000000, 0.55);
       overlay.fillCircle(cx, cy, CIRCLE_R);
       this.elements.push(overlay);
     }
 
-    // Charge count inside the circle
+    // Base damage inside the circle
     const hexColor = '#' + color.toString(16).padStart(6, '0');
-    const chargeText = this.scene.add.text(cx, cy, `${owned.charges ?? 0}`, {
-      fontSize: '26px',
-      color: hasCharges ? hexColor : '#cc3333',
+    const baseText = this.scene.add.text(cx, cy - 6, `${owned.base}`, {
+      fontSize: '22px',
+      color: hasBase ? hexColor : '#555566',
       fontFamily: 'Arial',
       fontStyle: 'bold',
       stroke: '#000000',
       strokeThickness: 4,
     }).setOrigin(0.5, 0.5).setDepth(54);
-    this.elements.push(chargeText);
+    this.elements.push(baseText);
+
+    // Multiplier below base
+    const multText = this.scene.add.text(cx, cy + 12, `×${mult}`, {
+      fontSize: '12px',
+      color: mult > 1 ? '#ffdd88' : '#444455',
+      fontFamily: 'Arial',
+      fontStyle: 'bold',
+    }).setOrigin(0.5, 0.5).setDepth(54);
+    this.elements.push(multText);
 
     // Store for setActiveCard / flashCard
     this.circleMap.set(owned.powerUpId, {
       bg: circleBg, ring, color, cx, cy,
-      isActiveTarget: false, hasCharges,
+      isActiveTarget: false, hasBase,
     });
 
-    // Circle zone — activate only (no drawer on 0-charge click)
+    // Circle zone — activate only if base > 0
     const circleZone = this.scene.add.zone(cx, cy, slotW * 0.92, CIRCLE_R * 2);
-    circleZone.setInteractive({ useHandCursor: hasCharges });
+    circleZone.setInteractive({ useHandCursor: hasBase });
     circleZone.setDepth(56);
     this.elements.push(circleZone);
 
@@ -235,7 +245,7 @@ export class InventoryBar {
       if (d && !d.isActiveTarget) this.paintCircle(d.bg, d.ring, d.cx, d.cy, d.color, false, false);
     });
     circleZone.on('pointerdown', () => {
-      if (hasCharges) this.options.onActivatePowerUp?.(owned.powerUpId);
+      if (hasBase) this.options.onActivatePowerUp?.(owned.powerUpId);
     });
   }
 

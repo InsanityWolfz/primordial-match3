@@ -12,7 +12,6 @@ export class BootScene extends Phaser.Scene {
     this.load.image('hazard-ice',         'assets/sprites/hazard-ice.png');
     this.load.image('hazard-stone',       'assets/sprites/hazard-stone.png');
     this.load.image('hazard-thornVine',   'assets/sprites/hazard-vines.png');
-    this.load.image('hazard-energySiphon','assets/sprites/hazard-energysiphon.png');
 
     // Enemy sprites
     this.load.image('enemy-fireImp',        'assets/sprites/enemy_fireImp.png');
@@ -27,7 +26,6 @@ export class BootScene extends Phaser.Scene {
     this.load.image('gem-earth',     'assets/sprites/gem-earth.png');
     this.load.image('gem-air',       'assets/sprites/gem-air.png');
     this.load.image('gem-lightning', 'assets/sprites/gem-lightning.png');
-    this.load.image('gem-nature',    'assets/sprites/gem-nature.png');
   }
 
   createLoadingBar(): void {

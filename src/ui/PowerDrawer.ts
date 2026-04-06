@@ -197,7 +197,7 @@ export class PowerDrawer {
     this.container.add(divider);
 
     // ── Sort cards ──
-    const ELEMENT_ORDER = ['fire', 'water', 'air', 'earth', 'lightning', 'nature'];
+    const ELEMENT_ORDER = ['fire', 'water', 'air', 'earth', 'lightning'];
     const CATEGORY_ORDER: Record<string, number> = { activePower: 0, passivePower: 1, passive: 2 };
     const sorted = [...this.ownedPowerUps].sort((a, b) => {
       const defA = getPowerUpDef(a.powerUpId);
@@ -264,7 +264,7 @@ export class PowerDrawer {
     const color     = gemType?.color ?? 0x888888;
     const levelData = def.levels[Math.min(owned.level, def.maxLevel) - 1];
     const isActive  = def.category === 'activePower';
-    const hasCharges = isActive && (owned.charges ?? 0) > 0;
+    const hasBase   = isActive && owned.base > 0;
 
     // Card background
     const card = this.scene.add.graphics();
@@ -304,43 +304,37 @@ export class PowerDrawer {
     });
     this.cardContainer.add(descT);
 
-    // Active powers: charge pips + activate button
-    if (isActive && owned.charges !== undefined && owned.maxCharges !== undefined) {
-      const maxPips = Math.min(owned.maxCharges, 8);
-      const pipR    = 5;
-      const pipGap  = 4;
-      const totalPW = maxPips * (pipR * 2) + (maxPips - 1) * pipGap;
-      let   px      = x + w - 10 - totalPW;
-      const pipY    = y + 14;
+    // Active powers: base×mult display + activate button
+    if (isActive) {
+      const mult     = Math.max(1, owned.multiplierPool);
+      const colorHex = '#' + color.toString(16).padStart(6, '0');
 
-      for (let i = 0; i < maxPips; i++) {
-        const filled = i < owned.charges;
-        const pip = this.scene.add.graphics();
-        pip.fillStyle(filled ? color : 0x222233, filled ? 0.9 : 0.5);
-        pip.fillCircle(px + pipR, pipY + pipR, pipR);
-        if (filled) {
-          pip.lineStyle(1, 0xffffff, 0.15);
-          pip.strokeCircle(px + pipR, pipY + pipR, pipR);
-        }
-        this.cardContainer.add(pip);
-        px += pipR * 2 + pipGap;
-      }
+      // Damage preview top-right
+      const dmgLabel = this.scene.add.text(x + w - 10, y + 10,
+        `${owned.base} × ${mult}`, {
+          fontSize: '14px',
+          color: hasBase ? colorHex : '#444455',
+          fontFamily: 'Arial',
+          fontStyle: 'bold',
+        });
+      dmgLabel.setOrigin(1, 0);
+      this.cardContainer.add(dmgLabel);
 
-      const pipCenterX = (x + w - 10 - totalPW) + totalPW / 2;
-      const chargeLbl = this.scene.add.text(
-        pipCenterX, pipY + pipR * 2 + 3,
-        `${owned.charges}/${owned.maxCharges}`,
-        { fontSize: '9px', color: hasCharges ? '#ffdd88' : '#555566', fontFamily: 'Arial' },
-      );
-      chargeLbl.setOrigin(0.5, 0);
-      this.cardContainer.add(chargeLbl);
+      const dmgSub = this.scene.add.text(x + w - 10, y + 26,
+        hasBase ? `= ${Math.floor(owned.base * mult)} dmg` : 'no damage yet', {
+          fontSize: '10px',
+          color: hasBase ? '#ffdd88' : '#444455',
+          fontFamily: 'Arial',
+        });
+      dmgSub.setOrigin(1, 0);
+      this.cardContainer.add(dmgSub);
 
       // Activate button (visual only — hit-tested manually)
       const btnX = x + w - BTN_W - 6;
       const btnY = y + h - BTN_H - 8;
 
       const btnBg = this.scene.add.graphics();
-      if (hasCharges) {
+      if (hasBase) {
         btnBg.fillStyle(color, 0.14);
         btnBg.lineStyle(1.5, color, 0.85);
       } else {
@@ -351,18 +345,17 @@ export class PowerDrawer {
       btnBg.strokeRoundedRect(btnX, btnY, BTN_W, BTN_H, 5);
       this.cardContainer.add(btnBg);
 
-      const colorHex = '#' + color.toString(16).padStart(6, '0');
-      const btnLabel = hasCharges ? '▶  ACTIVATE' : 'NO CHARGES';
+      const btnLabel = hasBase ? '▶  ACTIVATE' : 'NOT CHARGED';
       const btnText = this.scene.add.text(btnX + BTN_W / 2, btnY + BTN_H / 2, btnLabel, {
         fontSize: '13px',
-        color: hasCharges ? colorHex : '#444455',
+        color: hasBase ? colorHex : '#444455',
         fontFamily: 'Arial',
         fontStyle: 'bold',
       });
       btnText.setOrigin(0.5, 0.5);
       this.cardContainer.add(btnText);
 
-      if (hasCharges) {
+      if (hasBase) {
         this.activateBtnBounds.push({ id: owned.powerUpId, x: btnX, y: btnY, w: BTN_W, h: BTN_H });
       }
     }

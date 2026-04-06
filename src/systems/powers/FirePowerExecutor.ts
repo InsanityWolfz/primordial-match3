@@ -29,13 +29,12 @@ export class FirePowerExecutor {
    * Fireball: area blast around target.
    * Hits gems (destroys them), enemy tiles (deals full damage to enemy), hazards (1 instance).
    */
-  async executeFireball(level: number, targetRow: number, targetCol: number): Promise<void> {
+  async executeFireball(level: number, targetRow: number, targetCol: number, computedDamage: number): Promise<void> {
     const params = this.getParams('fireball', level);
     const r = params.radius ?? 1;
-    let damage = params.damage ?? 1;
+    const damage = computedDamage;
 
-    const passiveResult = this.passiveManager.onDamageDealt('fire', damage, 'fireball');
-    damage = passiveResult.modifiedDamage;
+    this.passiveManager.onDamageDealt('fire', damage, 'fireball');
 
     // Include ALL valid positions in AoE — gems AND enemy tiles
     const positions: { row: number; col: number }[] = [];
@@ -78,9 +77,5 @@ export class FirePowerExecutor {
       await this.cascadeSystem.processCascade(matches, 1);
     }
 
-    if (passiveResult.refundCharge) {
-      const owned = this.ctx.ownedPowerUps.find(p => p.powerUpId === 'fireball');
-      if (owned) owned.charges++;
-    }
   }
 }

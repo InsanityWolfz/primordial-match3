@@ -1,7 +1,6 @@
 import { GAME_CONFIG } from '../config/gameConfig.ts';
 import type { GameContext } from '../types/GameContext.ts';
 import type { PassiveManager } from './PassiveManager.ts';
-import { getPowerUpDef } from '../config/powerUps.ts';
 
 export interface DamageResult {
   destroyed: { row: number; col: number }[];
@@ -100,9 +99,6 @@ export class DamageSystem {
           hazardDestroyPromises.push(
             hazard.playDestroyAnimation(GAME_CONFIG.clearDuration).then(() => {
               this.ctx.hazardManager.clearPositions([p]);
-              if (destroyedDef.onDestroyDrainCharge) {
-                this.drainRandomCharge();
-              }
             }),
           );
           remainingDamage = remainingDamage - hazardHp;
@@ -206,10 +202,8 @@ export class DamageSystem {
         const hazardDestroyed = hazard.takeDamage(remainingDamage);
         if (hazardDestroyed) {
           result.hazardsDestroyed.push(pos);
-          const destroyedDef = hazard.def;
           await hazard.playDestroyAnimation(100);
           this.ctx.hazardManager.clearPositions([pos]);
-          if (destroyedDef.onDestroyDrainCharge) this.drainRandomCharge();
           remainingDamage = remainingDamage - hazardHp;
         } else {
           remainingDamage = 0;
@@ -256,29 +250,4 @@ export class DamageSystem {
     return result;
   }
 
-  /**
-   * Energy Siphon: drain 1 charge from a random active power-up.
-   */
-  private drainRandomCharge(): void {
-    const activePowers = this.ctx.ownedPowerUps.filter(p => {
-      const def = getPowerUpDef(p.powerUpId);
-      return def?.category === 'activePower' && p.charges > 0;
-    });
-
-    if (activePowers.length === 0) return;
-
-    const target = activePowers[Math.floor(Math.random() * activePowers.length)];
-    target.charges = Math.max(0, target.charges - 1);
-
-    const flash = this.ctx.phaserScene.add.graphics();
-    flash.fillStyle(0xcc3366, 0.15);
-    flash.fillRect(0, 0, GAME_CONFIG.width, GAME_CONFIG.height);
-    flash.setDepth(100);
-    this.ctx.phaserScene.tweens.add({
-      targets: flash,
-      alpha: 0,
-      duration: 400,
-      onComplete: () => flash.destroy(),
-    });
-  }
 }

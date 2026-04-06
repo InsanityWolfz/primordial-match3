@@ -10,7 +10,7 @@ import { Gem } from '../entities/Gem.ts';
 import { CascadeSystem } from '../systems/CascadeSystem.ts';
 import { DamageSystem } from '../systems/DamageSystem.ts';
 import { HazardManager } from '../systems/HazardManager.ts';
-import { EnemyManager } from '../systems/EnemyManager.ts';
+import { EnemyManager, type FiredIntent } from '../systems/EnemyManager.ts';
 import { PassiveManager } from '../systems/PassiveManager.ts';
 import { PowerUpExecutor } from '../systems/PowerUpExecutor.ts';
 import { HudManager } from '../ui/HudManager.ts';
@@ -23,16 +23,8 @@ export class GameScene extends Phaser.Scene implements GameContext {
   isSwapping = false;
   round = 1;
   turnsRemaining = 0;
-  essence = 0;
   ownedPowerUps: OwnedPowerUp[] = [];
-  powerSlotCount = 4;
-  passiveSlotCount = 2;
-
-  // Per-round essence multiplier counters (accumulate all round, reset next round)
-  private roundGemsDestroyed = 0;
-  private roundMatch3Count = 0;
-  private roundMatch4Count = 0;
-  private roundMatch5Count = 0;
+  ownedModifiers: string[] = [];
 
   // Per-round balance stats (only used when DEBUG_CONFIG.debugStats is true)
   private runId = '';
@@ -41,7 +33,6 @@ export class GameScene extends Phaser.Scene implements GameContext {
   private roundPowerUses: Record<string, number> = {};
 
   // Round modifier effect state
-  private essenceMultiplier = 1.0;
   private activeModifierId: string | null = null;
 
   // Systems
@@ -59,22 +50,11 @@ export class GameScene extends Phaser.Scene implements GameContext {
   private turnDrainBar!: Phaser.GameObjects.Graphics;
   private enemyValueText!: Phaser.GameObjects.Text;
   private turnCountText!: Phaser.GameObjects.Text;
-  // UI — essence pill
-  private essenceValueText!: Phaser.GameObjects.Text;
   // UI — shop button
   private shopButtonBg!: Phaser.GameObjects.Graphics;
   private shopButtonLabel!: Phaser.GameObjects.Text;
   private shopButtonSub!: Phaser.GameObjects.Text;
   private shopButtonZone!: Phaser.GameObjects.Zone;
-  // UI — per-round essence breakdown boxes
-  private bdGemsText!: Phaser.GameObjects.Text;
-  private bdM3Text!: Phaser.GameObjects.Text;
-  private bdM4Text!: Phaser.GameObjects.Text;
-  private bdM5Text!: Phaser.GameObjects.Text;
-  private bdTotalText!: Phaser.GameObjects.Text;
-  private bdM3Group: Phaser.GameObjects.GameObject[] = [];
-  private bdM4Group: Phaser.GameObjects.GameObject[] = [];
-  private bdM5Group: Phaser.GameObjects.GameObject[] = [];
 
   // Y position where the inventory panel starts (below the grid)
   private inventoryPanelY = 0;
@@ -110,14 +90,12 @@ export class GameScene extends Phaser.Scene implements GameContext {
       if (this.activeModifierId === 'overcrowded') {
         this.enemyManager.addExtraEnemies(2, this.round);
       }
-      this.hazardManager.placeHazards(this.round);
       this.updateEnemyDisplay();
     });
   }
 
   private applyModifier(modifier: { id: string; name: string; description: string } | null | undefined): void {
     // Reset modifier state
-    this.essenceMultiplier = 1.0;
     this.activeModifierId = modifier?.id ?? null;
 
     if (!modifier) return;
@@ -172,9 +150,6 @@ export class GameScene extends Phaser.Scene implements GameContext {
       case 'hazardStorm':
         // Applied after initializeSystems sets up hazardManager
         break;
-      case 'abundance':
-        this.essenceMultiplier = 1.5;
-        break;
       // 'overcrowded' is handled post-clearInitialMatches above
     }
   }
@@ -187,33 +162,23 @@ export class GameScene extends Phaser.Scene implements GameContext {
     this.resetRoundCounters();
 
     if (data && data.round > 0) {
-      this.essence = data.essence;
       this.round = data.round;
       this.ownedPowerUps = data.ownedPowerUps.map(p => ({ ...p }));
-      this.powerSlotCount = data.powerSlotCount ?? 4;
-      this.passiveSlotCount = data.passiveSlotCount ?? 2;
+      this.ownedModifiers = data.ownedModifiers ?? [];
       this.runId = data.runId ?? String(Date.now());
     } else {
-      this.essence = 0;
       this.round = 1;
       this.ownedPowerUps = [];
-      this.powerSlotCount = 4;
-      this.passiveSlotCount = 2;
+      this.ownedModifiers = [];
       this.runId = String(Date.now());
     }
 
     this.drawBackground();
     this.drawGridPanel();
     this.drawHUDBar();
-    this.drawEssencePill();
-    this.drawEssenceBreakdown();
   }
 
   private resetRoundCounters(): void {
-    this.roundGemsDestroyed = 0;
-    this.roundMatch3Count = 0;
-    this.roundMatch4Count = 0;
-    this.roundMatch5Count = 0;
     this.roundEnemiesKilled = 0;
     this.roundHazardsCleared = 0;
     this.roundPowerUses = {};
@@ -245,10 +210,10 @@ export class GameScene extends Phaser.Scene implements GameContext {
     );
 
     this.powerUpExecutor = new PowerUpExecutor(this, this.cascadeSystem, {
-      updateHudCharges: () => this.hudManager.updateHudCharges(),
       cancelTargeting: () => this.hudManager.cancelTargeting(),
       endRound: () => this.endRound(),
       onActionComplete: () => {
+        this.hudManager.updateHudCharges();
         this.updateEnemyDisplay();
         this.updateShopButton();
         this.flashPowerActivation();
@@ -259,7 +224,6 @@ export class GameScene extends Phaser.Scene implements GameContext {
     this.hazardManager = new HazardManager(this, this.grid);
     if (this.activeModifierId === 'hazardStorm') {
       this.hazardManager.maxHazards = 25;
-      this.hazardManager.spawnRateMultiplier = 1.5;
     }
 
     this.passiveManager = new PassiveManager(this);
@@ -270,22 +234,8 @@ export class GameScene extends Phaser.Scene implements GameContext {
     this.passiveManager.setDamageSystem(this.damageSystem);
     this.damageSystem.setPassiveManager(this.passiveManager);
 
-    // Per-round essence tracking
-    this.cascadeSystem.setOnMatchGroup((element, size) => {
-      if (size === 3) this.roundMatch3Count++;
-      else if (size === 4) this.roundMatch4Count++;
-      else if (size >= 5) this.roundMatch5Count++;
-      this.refundChargesForElement(element, size);
-      this.updateEssenceBreakdown();
-    });
-    this.cascadeSystem.setOnGemsDestroyed((count) => {
-      this.roundGemsDestroyed += count;
-      this.updateEssenceBreakdown();
-    });
-    // Power-destroyed gems also count toward round total
-    this.damageSystem.setOnGemsDestroyed((count) => {
-      this.roundGemsDestroyed += count;
-      this.updateEssenceBreakdown();
+    this.cascadeSystem.setOnPowerAccumulated(() => {
+      this.hudManager.updateHudCharges();
     });
     this.damageSystem.setOnHazardsDestroyed((count) => {
       this.roundHazardsCleared += count;
@@ -320,22 +270,6 @@ export class GameScene extends Phaser.Scene implements GameContext {
   }
 
   // ──────────────── GameContext UI ────────────────
-
-  updateEssenceDisplay(): void {
-    this.essenceValueText.setText(`${this.essence}`);
-    // Bounce animation when essence increases
-    this.tweens.add({
-      targets: this.essenceValueText,
-      scaleX: 1.3, scaleY: 1.3,
-      duration: 120,
-      yoyo: true,
-      ease: 'Power1',
-    });
-    this.essenceValueText.setColor('#ffffaa');
-    this.time.delayedCall(250, () => {
-      if (this.essenceValueText?.active) this.essenceValueText.setColor('#aabbff');
-    });
-  }
 
   updateTurnsDisplay(): void {
     const ratio = Math.max(0, this.turnsRemaining) / GAME_CONFIG.turnsPerRound;
@@ -374,7 +308,6 @@ export class GameScene extends Phaser.Scene implements GameContext {
       earth:     '#cc8833',
       air:       '#cceeff',
       lightning: '#ffee00',
-      nature:    '#44dd44',
     };
 
     const color = element ? (ELEMENT_COLORS[element] ?? '#ffffff') : '#ffffff';
@@ -440,58 +373,6 @@ export class GameScene extends Phaser.Scene implements GameContext {
     return new Promise(resolve => this.time.delayedCall(ms, resolve));
   }
 
-  // ──────────────── CHARGE REFUND ────────────────
-
-  private refundChargesForElement(element: string, matchSize: number): void {
-    const chargesGained = Math.min(matchSize - 2, 3);
-    if (chargesGained <= 0) return;
-
-    let anyRefunded = false;
-    for (const owned of this.ownedPowerUps) {
-      const def = getPowerUpDef(owned.powerUpId);
-      if (!def || def.element !== element || def.category === 'passive') continue;
-      const before = owned.charges;
-      owned.charges = Math.min(owned.maxCharges, owned.charges + chargesGained);
-      if (owned.charges > before) anyRefunded = true;
-    }
-
-    if (anyRefunded) {
-      this.hudManager.updateHudCharges();
-      this.showChargeRefundFeedback(element, chargesGained);
-    }
-  }
-
-  private showChargeRefundFeedback(element: string, amount: number): void {
-    const gemTypeDef = GAME_CONFIG.gemTypes.find(g => g.name === element);
-    const hex = gemTypeDef ? gemTypeDef.color.toString(16).padStart(6, '0') : 'ffffff';
-    const color = `#${hex}`;
-
-    const text = this.add.text(
-      GAME_CONFIG.width / 2,
-      GAME_CONFIG.gridOffsetY - 30,
-      `+${amount} ${element} charge${amount > 1 ? 's' : ''}`,
-      { fontSize: '14px', color, fontFamily: 'Arial', fontStyle: 'bold', stroke: '#000000', strokeThickness: 3 },
-    ).setOrigin(0.5, 1).setDepth(20).setAlpha(0);
-
-    this.tweens.add({
-      targets: text,
-      alpha: 1,
-      y: text.y - 30,
-      duration: 300,
-      ease: 'Power2',
-      onComplete: () => {
-        this.tweens.add({
-          targets: text,
-          alpha: 0,
-          y: text.y - 20,
-          duration: 500,
-          delay: 400,
-          onComplete: () => text.destroy(),
-        });
-      },
-    });
-  }
-
   // ──────────────── HUD ────────────────
 
   private drawBackground(): void {
@@ -553,164 +434,6 @@ export class GameScene extends Phaser.Scene implements GameContext {
     this.redrawTurnDrainBar();
   }
 
-  private drawEssencePill(): void {
-    const pillW = 180, pillH = 28, pillX = 270, pillY = 88;
-    const pill = this.add.graphics();
-    pill.fillStyle(0x1a1a33, 0.9);
-    pill.fillRoundedRect(pillX, pillY, pillW, pillH, 14);
-    pill.lineStyle(1, 0x4444aa, 0.8);
-    pill.strokeRoundedRect(pillX, pillY, pillW, pillH, 14);
-    pill.setDepth(10);
-
-    const iconX = pillX + 22, iconY = pillY + 14, ds = 6;
-    const diamond = this.add.graphics();
-    diamond.fillStyle(0x88aaff, 1);
-    diamond.fillTriangle(iconX, iconY - ds, iconX + ds, iconY, iconX, iconY + ds);
-    diamond.fillTriangle(iconX - ds, iconY, iconX, iconY - ds, iconX, iconY + ds);
-    diamond.setDepth(11);
-
-    this.add.text(iconX + 10, pillY + 14, 'ESSENCE', { fontSize: '10px', color: '#8888cc', fontFamily: 'Arial', fontStyle: 'bold' }).setOrigin(0, 0.5).setDepth(11);
-    this.essenceValueText = this.add.text(pillX + pillW - 12, pillY + 14, `${this.essence}`, { fontSize: '16px', color: '#aabbff', fontFamily: 'Arial', fontStyle: 'bold' }).setOrigin(1, 0.5).setDepth(11);
-  }
-
-  private drawEssenceBreakdown(): void {
-    const cX = 180, cY = 124, cW = 360, cH = 74;
-    const boxW = 38, boxH = 38, opW = 28, totalBoxW = 48;
-    const contentW = 4 * boxW + totalBoxW + 4 * opW;
-    const startX = cX + (cW - contentW) / 2;
-    const boxCY = cY + cH / 2;
-    const DEPTH = 11;
-
-    // Container
-    const container = this.add.graphics().setDepth(10);
-    container.fillStyle(0x06060f, 0.92);
-    container.fillRoundedRect(cX, cY, cW, cH, 8);
-    container.lineStyle(1, 0x2233aa, 0.7);
-    container.strokeRoundedRect(cX, cY, cW, cH, 8);
-
-    // Helper: draw a box and return its center X
-    const drawBox = (lx: number, dim = false): number => {
-      const cx2 = lx + boxW / 2;
-      const g = this.add.graphics().setDepth(DEPTH - 1);
-      g.fillStyle(0x10102a, dim ? 0.35 : 0.9);
-      g.fillRoundedRect(lx, boxCY - boxH / 2, boxW, boxH, 5);
-      g.lineStyle(1, 0x3344bb, dim ? 0.2 : 0.55);
-      g.strokeRoundedRect(lx, boxCY - boxH / 2, boxW, boxH, 5);
-      return cx2;
-    };
-
-    const drawTotalBox = (lx: number): number => {
-      const cx2 = lx + totalBoxW / 2;
-      const g = this.add.graphics().setDepth(DEPTH - 1);
-      g.fillStyle(0x181408, 0.92);
-      g.fillRoundedRect(lx, boxCY - boxH / 2, totalBoxW, boxH, 5);
-      g.lineStyle(1, 0x887722, 0.7);
-      g.strokeRoundedRect(lx, boxCY - boxH / 2, totalBoxW, boxH, 5);
-      return cx2;
-    };
-
-    const txt = (x: number, y: number, s: string, size: string, color: string, originX = 0.5) =>
-      this.add.text(x, y, s, { fontSize: size, color, fontFamily: 'Arial', fontStyle: 'bold' })
-        .setOrigin(originX, 0.5).setDepth(DEPTH);
-
-    const opColor = '#555577', labelColor = '#4455aa', rateColor = '#7788cc';
-
-    // ── Box 1: Gems ──
-    let lx = startX;
-    drawBox(lx);
-    txt(lx + boxW / 2, boxCY - boxH / 2 - 9, ' ', '9px', rateColor);     // spacer (no rate)
-    this.bdGemsText = txt(lx + boxW / 2, boxCY, '0', '18px', '#aabbff');
-    txt(lx + boxW / 2, boxCY + boxH / 2 + 9, 'GEMS', '9px', labelColor);
-    lx += boxW;
-
-    // ── Operator × ──
-    txt(lx + opW / 2, boxCY, '×', '14px', opColor);
-    lx += opW;
-
-    // ── Box 2: Match-3 ──
-    this.bdM3Group = [];
-    const cx3 = drawBox(lx, true);
-    this.bdM3Group.push(txt(cx3, boxCY - boxH / 2 - 9, '+8%', '9px', rateColor));
-    this.bdM3Text = txt(cx3, boxCY, '0', '18px', '#aabbff');
-    this.bdM3Group.push(this.bdM3Text);
-    this.bdM3Group.push(txt(cx3, boxCY + boxH / 2 + 9, 'MATCH-3', '9px', labelColor));
-    lx += boxW;
-
-    // ── Operator × ──
-    this.bdM3Group.push(txt(lx + opW / 2, boxCY, '×', '14px', opColor));
-    lx += opW;
-
-    // ── Box 3: Match-4 ──
-    this.bdM4Group = [];
-    const cx4 = drawBox(lx, true);
-    this.bdM4Group.push(txt(cx4, boxCY - boxH / 2 - 9, '+20%', '9px', rateColor));
-    this.bdM4Text = txt(cx4, boxCY, '0', '18px', '#aabbff');
-    this.bdM4Group.push(this.bdM4Text);
-    this.bdM4Group.push(txt(cx4, boxCY + boxH / 2 + 9, 'MATCH-4', '9px', labelColor));
-    lx += boxW;
-
-    // ── Operator × ──
-    this.bdM4Group.push(txt(lx + opW / 2, boxCY, '×', '14px', opColor));
-    lx += opW;
-
-    // ── Box 4: Match-5 ──
-    this.bdM5Group = [];
-    const cx5 = drawBox(lx, true);
-    this.bdM5Group.push(txt(cx5, boxCY - boxH / 2 - 9, '+50%', '9px', rateColor));
-    this.bdM5Text = txt(cx5, boxCY, '0', '18px', '#aabbff');
-    this.bdM5Group.push(this.bdM5Text);
-    this.bdM5Group.push(txt(cx5, boxCY + boxH / 2 + 9, 'MATCH-5', '9px', labelColor));
-    lx += boxW;
-
-    // ── Operator = ──
-    txt(lx + opW / 2, boxCY, '=', '14px', opColor);
-    lx += opW;
-
-    // ── Box 5: Total ──
-    const cxT = drawTotalBox(lx);
-    txt(cxT, boxCY - boxH / 2 - 9, ' ', '9px', rateColor);               // spacer
-    this.bdTotalText = txt(cxT, boxCY, '0', '18px', '#ffffaa');
-    txt(cxT, boxCY + boxH / 2 + 9, 'TOTAL', '9px', '#887733');
-
-    this.updateEssenceBreakdown();
-  }
-
-  // Bonus essence for turns the player didn't need after clearing enemies.
-  // Flat rate: round * 20 * turns remaining — predictable and scales with progression.
-  private calcTurnBonus(): number {
-    if (this.turnsRemaining <= 0) return 0;
-    return this.round * 20 * this.turnsRemaining;
-  }
-
-  // +8% per match-3 / +20% per match-4 / +50% per match-5 (additive, no runaway stacking)
-  private calcEssenceMultiplier(): number {
-    return 1
-      + this.roundMatch3Count * 0.08
-      + this.roundMatch4Count * 0.20
-      + this.roundMatch5Count * 0.50;
-  }
-
-  updateEssenceBreakdown(): void {
-    if (!this.bdGemsText) return;
-
-    const preview = Math.floor(this.roundGemsDestroyed * this.calcEssenceMultiplier() * this.essenceMultiplier);
-
-    this.bdGemsText.setText(`${this.roundGemsDestroyed}`);
-    this.bdM3Text.setText(`${this.roundMatch3Count}`);
-    this.bdM4Text.setText(`${this.roundMatch4Count}`);
-    this.bdM5Text.setText(`${this.roundMatch5Count}`);
-    this.bdTotalText.setText(`${preview}`);
-
-    // Dim groups whose count is still zero
-    const setGroupAlpha = (group: Phaser.GameObjects.GameObject[], hasValue: boolean) => {
-      const a = hasValue ? 1 : 0.3;
-      group.forEach(o => (o as Phaser.GameObjects.Text).setAlpha(a));
-    };
-    setGroupAlpha(this.bdM3Group, this.roundMatch3Count > 0);
-    setGroupAlpha(this.bdM4Group, this.roundMatch4Count > 0);
-    setGroupAlpha(this.bdM5Group, this.roundMatch5Count > 0);
-  }
-
   private drawShopButtonBg(active: boolean): void {
     this.shopButtonBg.clear();
     if (active) {
@@ -730,13 +453,9 @@ export class GameScene extends Phaser.Scene implements GameContext {
     if (!this.shopButtonBg) return;
     const enemiesDead = this.enemyManager?.allEnemiesDead() ?? false;
     if (enemiesDead) {
-      const turnBonus = this.calcTurnBonus();
-      const subText = turnBonus > 0
-        ? `+${turnBonus} ess for ${this.turnsRemaining} turns`
-        : 'Enemies Cleared!';
       this.drawShopButtonBg(true);
       this.shopButtonLabel.setColor('#44cc88');
-      this.shopButtonSub.setText(subText).setColor('#aaffcc');
+      this.shopButtonSub.setText('Enemies Cleared!').setColor('#aaffcc');
       this.shopButtonZone.setInteractive({ useHandCursor: true });
     } else {
       this.drawShopButtonBg(false);
@@ -837,7 +556,8 @@ export class GameScene extends Phaser.Scene implements GameContext {
 
     await this.cascadeSystem.processCascade(matches, 1);
 
-    this.enemyManager.processTurnEnd();
+    const firedIntents = this.enemyManager.processTurnEnd();
+    await this.processEnemyIntents(firedIntents);
     await this.hazardManager.processTurnEnd();
 
     this.hudManager.updateHudCharges();
@@ -848,6 +568,42 @@ export class GameScene extends Phaser.Scene implements GameContext {
 
     if (this.turnsRemaining <= 0) {
       await this.checkEndCondition();
+    }
+  }
+
+  /**
+   * Route fired enemy intents to their effects.
+   * Called after each player turn. Intents that have no implementation yet are silently skipped.
+   */
+  private async processEnemyIntents(firedIntents: FiredIntent[]): Promise<void> {
+    if (firedIntents.length > 0) {
+      // Lightning: +2 multiplier per intent fired
+      const lightningPower = this.ownedPowerUps.find(p => p.powerUpId === 'chainstrike');
+      if (lightningPower) lightningPower.multiplierPool += 2 * firedIntents.length;
+    }
+
+    for (const { enemy, intent } of firedIntents) {
+      switch (intent.id) {
+        case 'spawnIce':
+          this.hazardManager.spawnHazardNearEnemy(enemy, 'ice');
+          break;
+        case 'spawnStone':
+          this.hazardManager.spawnHazardNearEnemy(enemy, 'stone');
+          break;
+        case 'spreadVines':
+          this.hazardManager.spawnHazardNearEnemy(enemy, 'thornVine');
+          break;
+        case 'regenerate':
+          // Heal ~25% of max HP
+          enemy.heal(Math.ceil(enemy.maxHp * 0.25));
+          break;
+        case 'drainCharge':
+          // Stubbed — will drain base damage + multiplier in Phase 3
+          break;
+        case 'shield':
+          // Stubbed — Earth Giant not yet in round pool
+          break;
+      }
     }
   }
 
@@ -876,13 +632,6 @@ export class GameScene extends Phaser.Scene implements GameContext {
     await this.delay(500);
 
     const success = this.enemyManager.allEnemiesDead();
-    const essenceEarned = success ? Math.floor(this.roundGemsDestroyed * this.calcEssenceMultiplier() * this.essenceMultiplier) : 0;
-    const turnBonus = success ? this.calcTurnBonus() : 0;
-
-    if (success) {
-      this.essence += essenceEarned + turnBonus;
-      this.updateEssenceDisplay();
-    }
 
     if (DEBUG_CONFIG.debugStats) {
       StatsLogger.logRound({
@@ -891,11 +640,11 @@ export class GameScene extends Phaser.Scene implements GameContext {
         timestamp: Date.now(),
         win: success,
         modifier: this.activeModifierId,
-        essenceEarned,
-        gemsDestroyed: this.roundGemsDestroyed,
-        match3Count: this.roundMatch3Count,
-        match4Count: this.roundMatch4Count,
-        match5Count: this.roundMatch5Count,
+        essenceEarned: 0,
+        gemsDestroyed: 0,
+        match3Count: 0,
+        match4Count: 0,
+        match5Count: 0,
         hazardsCleared: this.roundHazardsCleared,
         enemiesKilled: this.roundEnemiesKilled,
         turnsUsed: GAME_CONFIG.turnsPerRound - Math.max(0, this.turnsRemaining),
@@ -904,11 +653,9 @@ export class GameScene extends Phaser.Scene implements GameContext {
     }
 
     const runState: RunState = {
-      essence: this.essence,
       round: this.round,
       ownedPowerUps: this.ownedPowerUps.map(p => ({ ...p })),
-      powerSlotCount: this.powerSlotCount,
-      passiveSlotCount: this.passiveSlotCount,
+      ownedModifiers: this.ownedModifiers,
       runId: this.runId,
     };
 
@@ -1047,14 +794,6 @@ export class GameScene extends Phaser.Scene implements GameContext {
   createDebugButtons(): void {
     const btnY = 90;
 
-    const addText = this.add.text(GAME_CONFIG.width - 130, btnY, '+100', {
-      fontSize: '14px', color: '#888888', fontFamily: 'Arial', backgroundColor: '#222222', padding: { x: 6, y: 4 },
-    }).setOrigin(0.5, 0.5).setDepth(12);
-    addText.setInteractive({ useHandCursor: true });
-    addText.on('pointerdown', () => { this.essence += 100; this.updateEssenceDisplay(); });
-    addText.on('pointerover', () => addText.setColor('#ffffff'));
-    addText.on('pointerout',  () => addText.setColor('#888888'));
-
     const shopText = this.add.text(GAME_CONFIG.width - 50, btnY, 'Shop', {
       fontSize: '14px', color: '#888888', fontFamily: 'Arial', backgroundColor: '#222222', padding: { x: 6, y: 4 },
     }).setOrigin(0.5, 0.5).setDepth(12);
@@ -1085,7 +824,7 @@ export class GameScene extends Phaser.Scene implements GameContext {
 
   resetGame(): void {
     this.scene.start('GameScene', {
-      essence: 0, round: 0, ownedPowerUps: [], powerSlotCount: 4, passiveSlotCount: 2,
-    });
+      round: 0, ownedPowerUps: [], ownedModifiers: [],
+    } satisfies RunState);
   }
 }

@@ -1,10 +1,9 @@
 import type Phaser from 'phaser';
 import { Hazard } from '../entities/Hazard.ts';
-import { HAZARD_DEFINITIONS, MAX_HAZARDS_PER_ROUND, getHazardCount } from '../config/hazardConfig.ts';
-import type { HazardDefinition } from '../config/hazardConfig.ts';
+import { HAZARD_DEFINITIONS, MAX_HAZARDS_PER_ROUND } from '../config/hazardConfig.ts';
 import type { Grid } from '../entities/Grid.ts';
 import { GAME_CONFIG } from '../config/gameConfig.ts';
-import type { Gem } from '../entities/Gem.ts';
+import type { Enemy } from '../entities/Enemy.ts';
 
 export class HazardManager {
   private scene: Phaser.Scene;
@@ -12,11 +11,9 @@ export class HazardManager {
   private hazardGrid: (Hazard | null)[][];
   readonly rows: number;
   readonly cols: number;
-  private totalPlacedThisRound = 0;
   private turnCounter = 0;
-  // Modifier overrides — set by GameScene when a round modifier is active
+  // Modifier override — set by GameScene when a round modifier is active
   maxHazards: number = MAX_HAZARDS_PER_ROUND;
-  spawnRateMultiplier: number = 1.0;
 
   constructor(scene: Phaser.Scene, grid: Grid) {
     this.scene = scene;
@@ -81,94 +78,72 @@ export class HazardManager {
     return count;
   }
 
-  getTotalPlaced(): number {
-    return this.totalPlacedThisRound;
-  }
-
-  // ─── Placement ───
+  // ─── Intent-driven spawning ───
 
   /**
-   * Place hazards for round start. Total across all types is capped at MAX_HAZARDS_PER_ROUND.
-   * Hazards are never placed on enemy tiles.
+   * Spawn a hazard of the given type on a gem adjacent to the enemy.
+   * Searches ring by ring outward from the enemy's tiles, picking a random
+   * eligible (has gem, no hazard, not enemy tile) position in the nearest ring.
+   * No-ops if at the hazard cap or no valid position exists.
    */
-  placeHazards(round: number): void {
-    this.totalPlacedThisRound = 0;
-    this.turnCounter = 0;
+  spawnHazardNearEnemy(enemy: Enemy, hazardId: string): void {
+    if (this.getRemainingCount() >= this.maxHazards) return;
 
-    let totalPlaced = 0;
+    const def = HAZARD_DEFINITIONS.find(d => d.id === hazardId);
+    if (!def) return;
 
-    for (const def of HAZARD_DEFINITIONS) {
-      if (totalPlaced >= this.maxHazards) break;
-      const want = getHazardCount(def, round);
-      if (want <= 0) continue;
-      const canPlace = Math.min(want, this.maxHazards - totalPlaced);
-      const placed = this.placeHazardType(def, canPlace);
-      totalPlaced += placed;
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]] as const;
+
+    // Seed the visited set with all enemy tiles
+    const visited = new Set<string>();
+    for (let r = enemy.gridRow; r < enemy.gridRow + enemy.heightInCells; r++) {
+      for (let c = enemy.gridCol; c < enemy.gridCol + enemy.widthInCells; c++) {
+        visited.add(`${r},${c}`);
+      }
     }
 
-    this.totalPlacedThisRound = this.getRemainingCount();
-  }
+    // Starting frontier = the enemy tile set itself
+    let frontier = new Set<string>(visited);
 
-  private placeHazardType(def: HazardDefinition, count: number): number {
-    // Available: has gem, no hazard, not an enemy tile
-    const available: { row: number; col: number }[] = [];
-    for (let r = 0; r < this.rows; r++) {
-      for (let c = 0; c < this.cols; c++) {
-        if (this.grid.getGem(r, c) && !this.hazardGrid[r][c] && !this.grid.isEnemyTile(r, c)) {
-          available.push({ row: r, col: c });
+    while (frontier.size > 0) {
+      // Expand one ring outward
+      const nextFrontier = new Set<string>();
+      for (const key of frontier) {
+        const [r, c] = key.split(',').map(Number);
+        for (const [dr, dc] of dirs) {
+          const nr = r + dr;
+          const nc = c + dc;
+          const nkey = `${nr},${nc}`;
+          if (!visited.has(nkey) && nr >= 0 && nr < this.rows && nc >= 0 && nc < this.cols) {
+            visited.add(nkey);
+            nextFrontier.add(nkey);
+          }
         }
       }
-    }
 
-    // Shuffle
-    for (let i = available.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [available[i], available[j]] = [available[j], available[i]];
-    }
+      if (nextFrontier.size === 0) break;
 
-    const toPlace = Math.min(count, available.length);
-    for (let i = 0; i < toPlace; i++) {
-      const pos = available[i];
-      const hazard = new Hazard(this.scene, pos.row, pos.col, def);
-      this.hazardGrid[pos.row][pos.col] = hazard;
-      const gem = this.grid.getGem(pos.row, pos.col);
-      if (gem) hazard.setGem(gem);
-    }
-    return toPlace;
-  }
+      // Find eligible positions in this ring
+      const candidates = [...nextFrontier]
+        .map(key => { const [r, c] = key.split(',').map(Number); return { row: r, col: c }; })
+        .filter(pos =>
+          this.grid.getGem(pos.row, pos.col) &&
+          !this.hazardGrid[pos.row][pos.col] &&
+          !this.grid.isEnemyTile(pos.row, pos.col),
+        );
 
-  /**
-   * Dynamic hazard spawning: called when a new gem is placed on the board.
-   * Chance = currentHazardCount × 0.5% (0.005).
-   * Returns true if the gem was converted to a hazard (so spawn logic can skip animating it normally).
-   */
-  maybeSpawnHazardOnGem(row: number, col: number, gem: Gem): boolean {
-    const currentCount = this.getRemainingCount();
-    if (currentCount >= this.maxHazards) return false;
-    if (currentCount === 0) return false; // no hazards on board = no spawn pressure
-
-    const chance = currentCount * 0.005 * this.spawnRateMultiplier;
-    if (Math.random() >= chance) return false;
-
-    // Pick a random eligible hazard type for this round
-    // Only use hazard types that are already present on the board
-    const presentTypes = new Set<string>();
-    for (let r = 0; r < this.rows; r++) {
-      for (let c = 0; c < this.cols; c++) {
-        const h = this.hazardGrid[r][c];
-        if (h) presentTypes.add(h.def.id);
+      if (candidates.length > 0) {
+        const pos = candidates[Math.floor(Math.random() * candidates.length)];
+        const gem = this.grid.getGem(pos.row, pos.col)!;
+        const hazard = new Hazard(this.scene, pos.row, pos.col, def);
+        this.hazardGrid[pos.row][pos.col] = hazard;
+        hazard.setGem(gem);
+        return;
       }
+
+      frontier = nextFrontier;
     }
-
-    if (presentTypes.size === 0) return false;
-
-    const eligibleDefs = HAZARD_DEFINITIONS.filter(d => presentTypes.has(d.id));
-    const def = eligibleDefs[Math.floor(Math.random() * eligibleDefs.length)];
-
-    const hazard = new Hazard(this.scene, row, col, def);
-    this.hazardGrid[row][col] = hazard;
-    hazard.setGem(gem);
-    return true;
+    // No valid position found — all reachable gems already have hazards
   }
 
   // ─── Damage ───
@@ -326,7 +301,6 @@ export class HazardManager {
     }
 
     if (newHazards.length > 0) {
-      this.totalPlacedThisRound += newHazards.length;
       for (const hazard of newHazards) {
         hazard.overlay.setAlpha(0);
         if (hazard.hpText) hazard.hpText.setAlpha(0);

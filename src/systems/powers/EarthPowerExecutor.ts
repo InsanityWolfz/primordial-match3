@@ -29,14 +29,12 @@ export class EarthPowerExecutor {
    * Earthquake: shuffle all gems + deal damage to N random gems (targetCount).
    * Passive bonuses: Tectonic Plates (bonus turns), Fissure (bonus damage).
    */
-  async executeEarthquake(level: number): Promise<void> {
+  async executeEarthquake(level: number, computedDamage: number): Promise<void> {
     const params = this.getParams('earthquake', level);
     const targetCount = params.targetCount ?? 12;
-    let damage = params.damage ?? 1;
+    let damage = computedDamage;
 
-    // Passive: refund
-    const passiveResult = this.passiveManager.onDamageDealt('earth', damage, 'earthquake');
-    damage = passiveResult.modifiedDamage;
+    this.passiveManager.onDamageDealt('earth', damage, 'earthquake');
 
     // Passive: earthquake bonuses
     const eqPassive = this.passiveManager.onEarthquakeUsed();
@@ -118,10 +116,5 @@ export class EarthPowerExecutor {
       this.ctx.updateTurnsDisplay();
     }
 
-    // Passive: refund charge
-    if (passiveResult.refundCharge) {
-      const owned = this.ctx.ownedPowerUps.find(p => p.powerUpId === 'earthquake');
-      if (owned) owned.charges++;
-    }
   }
 }

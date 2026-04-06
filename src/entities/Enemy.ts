@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_CONFIG } from '../config/gameConfig.ts';
 import type { EnemyTrait } from '../config/enemyTraits.ts';
+import type { EnemyTypeDef, IntentDef } from '../config/enemyTypes.ts';
 
 // Element name → color map for warded badge
 const ELEMENT_COLORS: Record<string, number> = {
@@ -9,16 +10,42 @@ const ELEMENT_COLORS: Record<string, number> = {
   earth:     0x8b6914,
   air:       0xe8e8e8,
   lightning: 0xffdd00,
-  nature:    0x44bb44,
 };
+
+// Intent urgency thresholds → badge background colors and text colors
+const BADGE_BG: Record<'urgent' | 'warning' | 'normal', number> = {
+  urgent:  0x991111,
+  warning: 0x886600,
+  normal:  0x334455,
+};
+const BADGE_TEXT: Record<'urgent' | 'warning' | 'normal', string> = {
+  urgent:  '#ff4444',
+  warning: '#ffcc44',
+  normal:  '#aabbcc',
+};
+
+function urgency(countdown: number): 'urgent' | 'warning' | 'normal' {
+  if (countdown <= 1) return 'urgent';
+  if (countdown <= 3) return 'warning';
+  return 'normal';
+}
+
+interface IntentInstance {
+  def: IntentDef;
+  countdown: number;
+  bg: Phaser.GameObjects.Graphics;
+  label: Phaser.GameObjects.Text;
+  tooltip: Phaser.GameObjects.Text;
+  zone: Phaser.GameObjects.Zone;
+}
 
 /**
  * Enemy occupies widthInCells × heightInCells grid tiles.
- * Rendered as a colored rectangle with an HP bar.
- * Gems can fall through enemy tiles but never rest inside them.
- * Only powers can damage enemies.
+ * Type determines sprite, color, and intent set.
+ * Gems fall through enemy tiles; only powers deal damage.
  */
 export class Enemy {
+  readonly type: string;
   readonly gridRow: number;    // top-left row
   readonly gridCol: number;    // top-left col
   readonly widthInCells: number;
@@ -29,18 +56,18 @@ export class Enemy {
 
   // Trait state
   trait?: EnemyTrait;
-  wardedElement?: string;   // only for 'warded' trait
-  shieldActive = false;     // only for 'shielded' trait
+  wardedElement?: string;
+  shieldActive = false;
 
   private scene: Phaser.Scene;
   private body: Phaser.GameObjects.Graphics;
   private spriteImage?: Phaser.GameObjects.Image;
   private hpBarBg: Phaser.GameObjects.Graphics;
   private hpBarFill: Phaser.GameObjects.Graphics;
-  private badgeText?: Phaser.GameObjects.Text;
+  private traitBadge?: Phaser.GameObjects.Text;
   private hpText!: Phaser.GameObjects.Text;
+  private intentInstances: IntentInstance[] = [];
 
-  // World pixel coords (top-left of enemy rectangle)
   readonly worldX: number;
   readonly worldY: number;
   readonly worldW: number;
@@ -50,20 +77,18 @@ export class Enemy {
     scene: Phaser.Scene,
     gridRow: number,
     gridCol: number,
-    widthInCells: number,
-    heightInCells: number,
-    color: number,
+    typeDef: EnemyTypeDef,
     hpMultiplier: number = 1,
   ) {
     this.scene = scene;
+    this.type = typeDef.type;
     this.gridRow = gridRow;
     this.gridCol = gridCol;
-    this.widthInCells = widthInCells;
-    this.heightInCells = heightInCells;
-    this.color = color;
+    this.widthInCells = typeDef.widthInCells;
+    this.heightInCells = typeDef.heightInCells;
+    this.color = typeDef.color;
 
-    // HP = total tiles covered × 2, scaled by late-game multiplier
-    this.maxHp = Math.ceil(widthInCells * heightInCells * 2 * hpMultiplier);
+    this.maxHp = Math.ceil(typeDef.widthInCells * typeDef.heightInCells * 8 * hpMultiplier);
     this.hp = this.maxHp;
 
     const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
@@ -71,17 +96,17 @@ export class Enemy {
 
     this.worldX = GAME_CONFIG.gridOffsetX + gridCol * cellSize;
     this.worldY = GAME_CONFIG.gridOffsetY + gridRow * cellSize;
-    this.worldW = widthInCells * cellSize - padding;
-    this.worldH = heightInCells * cellSize - padding;
+    this.worldW = typeDef.widthInCells * cellSize - padding;
+    this.worldH = typeDef.heightInCells * cellSize - padding;
 
-    // Body rectangle (background behind sprite)
+    // Body rectangle
     this.body = scene.add.graphics();
     this.body.setDepth(4);
     this.drawBody();
 
-    // Sprite image (scaled to fill the enemy area)
-    const spriteKey = Enemy.spriteKeyForSize(widthInCells, heightInCells);
-    if (spriteKey && scene.textures.exists(spriteKey)) {
+    // Sprite (keyed by type name)
+    const spriteKey = `enemy-${typeDef.type}`;
+    if (scene.textures.exists(spriteKey)) {
       const cx = this.worldX + this.worldW / 2;
       const cy = this.worldY + this.worldH / 2;
       this.spriteImage = scene.add.image(cx, cy, spriteKey);
@@ -89,7 +114,7 @@ export class Enemy {
       this.spriteImage.setDepth(5);
     }
 
-    // HP bar background (dark strip above the enemy)
+    // HP bar
     const barH = 6;
     const barY = this.worldY - barH - 3;
     this.hpBarBg = scene.add.graphics();
@@ -97,11 +122,9 @@ export class Enemy {
     this.hpBarBg.fillStyle(0x222222, 0.9);
     this.hpBarBg.fillRect(this.worldX, barY, this.worldW, barH);
 
-    // HP bar fill (starts full)
     this.hpBarFill = scene.add.graphics();
     this.hpBarFill.setDepth(6);
 
-    // HP text centered on enemy
     const cx = this.worldX + this.worldW / 2;
     const cy = this.worldY + this.worldH / 2;
     this.hpText = scene.add.text(cx, cy, `${this.hp}/${this.maxHp}`, {
@@ -116,49 +139,141 @@ export class Enemy {
     this.hpText.setDepth(7);
 
     this.drawHpBar();
+
+    // Intent badges — one per intent, stacked from the bottom of the enemy body
+    this.intentInstances = typeDef.intents.map((def, i) => this.createIntentBadge(def, i));
   }
 
-  // ──────────────── STATIC HELPERS ────────────────
+  // ──────────────── INTENT BADGES ────────────────
 
-  /** Map widthInCells × heightInCells to a loaded sprite key, or null if no sprite exists. */
-  static spriteKeyForSize(w: number, h: number): string | null {
-    const map: Record<string, string> = {
-      '1x2': 'enemy-fireImp',
-      '2x2': 'enemy-iceWhelp',
-      '2x3': 'enemy-lightningWraith',
-      '3x3': 'enemy-vineMonster',
-      '3x4': 'enemy-earthGolem',
-    };
-    return map[`${w}x${h}`] ?? null;
+  private badgeWidth = 46;
+  private badgeHeight = 18;
+  private badgeGap = 3;
+
+  /** Compute the center-x and bottom-y for a badge by index (0 = bottommost). */
+  private badgePos(index: number): { cx: number; bottomY: number } {
+    const cx = this.worldX + this.worldW / 2;
+    const bottomY = this.worldY + this.worldH - 4 - index * (this.badgeHeight + this.badgeGap);
+    return { cx, bottomY };
+  }
+
+  private createIntentBadge(def: IntentDef, index: number): IntentInstance {
+    const countdown = Phaser.Math.Between(def.intervalMin, def.intervalMax);
+    const { cx, bottomY } = this.badgePos(index);
+    const bw = this.badgeWidth;
+    const bh = this.badgeHeight;
+    const urg = urgency(countdown);
+
+    // Background
+    const bg = this.scene.add.graphics();
+    bg.setDepth(7);
+    this.drawBadgeBg(bg, cx - bw / 2, bottomY - bh, bw, bh, BADGE_BG[urg]);
+
+    // Label text: "vine 3"
+    const label = this.scene.add.text(cx, bottomY - bh / 2, `${def.label} ${countdown}`, {
+      fontSize: '10px',
+      fontFamily: 'monospace',
+      color: BADGE_TEXT[urg],
+      stroke: '#000000',
+      strokeThickness: 2,
+      align: 'center',
+    });
+    label.setOrigin(0.5, 0.5);
+    label.setDepth(8);
+
+    // Tooltip (hidden by default)
+    const tooltipText = `${def.tooltip} in ${countdown} turn${countdown === 1 ? '' : 's'}`;
+    const tooltip = this.scene.add.text(cx, bottomY - bh - 18, tooltipText, {
+      fontSize: '10px',
+      fontFamily: 'monospace',
+      color: '#ffffff',
+      backgroundColor: '#000000cc',
+      padding: { x: 4, y: 3 },
+      align: 'center',
+    });
+    tooltip.setOrigin(0.5, 1);
+    tooltip.setDepth(20);
+    tooltip.setVisible(false);
+
+    // Interactive zone over the badge
+    const zone = this.scene.add.zone(cx, bottomY - bh / 2, bw, bh).setInteractive();
+    zone.setDepth(9);
+    zone.on('pointerover', () => tooltip.setVisible(true));
+    zone.on('pointerout', () => tooltip.setVisible(false));
+
+    return { def, countdown, bg, label, tooltip, zone };
+  }
+
+  private drawBadgeBg(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number, color: number): void {
+    g.clear();
+    g.fillStyle(color, 0.85);
+    g.fillRoundedRect(x, y, w, h, 4);
+    g.lineStyle(1, 0xffffff, 0.2);
+    g.strokeRoundedRect(x, y, w, h, 4);
+  }
+
+  private redrawBadge(inst: IntentInstance, index: number): void {
+    const { cx, bottomY } = this.badgePos(index);
+    const bw = this.badgeWidth;
+    const bh = this.badgeHeight;
+    const urg = urgency(inst.countdown);
+
+    this.drawBadgeBg(inst.bg, cx - bw / 2, bottomY - bh, bw, bh, BADGE_BG[urg]);
+
+    inst.label.setText(`${inst.def.label} ${inst.countdown}`);
+    inst.label.setStyle({ color: BADGE_TEXT[urg] });
+    inst.label.setPosition(cx, bottomY - bh / 2);
+
+    const tooltipText = `${inst.def.tooltip} in ${inst.countdown} turn${inst.countdown === 1 ? '' : 's'}`;
+    inst.tooltip.setText(tooltipText);
+    inst.tooltip.setPosition(cx, bottomY - bh - 18);
+
+    inst.zone.setPosition(cx, bottomY - bh / 2);
+  }
+
+  // ──────────────── INTENT TICKING ────────────────
+
+  /**
+   * Decrement all intent countdowns by 1.
+   * Returns the list of IntentDefs that fired (countdown reached 0).
+   * Fired intents get a fresh countdown rolled from [intervalMin, intervalMax].
+   */
+  tickIntents(): IntentDef[] {
+    const fired: IntentDef[] = [];
+    for (let i = 0; i < this.intentInstances.length; i++) {
+      const inst = this.intentInstances[i];
+      inst.countdown--;
+      if (inst.countdown <= 0) {
+        fired.push(inst.def);
+        inst.countdown = Phaser.Math.Between(inst.def.intervalMin, inst.def.intervalMax);
+      }
+      this.redrawBadge(inst, i);
+    }
+    return fired;
   }
 
   // ──────────────── TRAIT ────────────────
 
-  /**
-   * Assign a trait. Call this after construction, before first damage.
-   * @param trait      The trait to assign
-   * @param wardedElem For 'warded' only: the element this enemy is immune to
-   */
   setTrait(trait: EnemyTrait, wardedElem?: string): void {
     this.trait = trait;
     if (trait === 'warded') this.wardedElement = wardedElem;
     if (trait === 'shielded') this.shieldActive = true;
-    this.drawBadge();
+    this.drawTraitBadge();
   }
 
-  private drawBadge(): void {
+  private drawTraitBadge(): void {
     if (!this.trait) return;
 
-    this.badgeText?.destroy();
+    this.traitBadge?.destroy();
 
     const cx = this.worldX + this.worldW / 2;
     const cy = this.worldY + this.worldH / 2;
 
-    let label: string = this.trait;
+    let traitLabel: string = this.trait;
     let color = '#ffffff';
 
     if (this.trait === 'warded' && this.wardedElement) {
-      label = `warded\n${this.wardedElement}`;
+      traitLabel = `warded\n${this.wardedElement}`;
       const elemColor = ELEMENT_COLORS[this.wardedElement];
       if (elemColor !== undefined) {
         color = '#' + elemColor.toString(16).padStart(6, '0');
@@ -167,10 +282,10 @@ export class Enemy {
       color = '#888888';
     }
 
-    // Shift HP text up to make room for the trait label below
+    // Shift HP text up if trait badge is displayed
     this.hpText.setY(cy - 9);
 
-    this.badgeText = this.scene.add.text(cx, cy + 9, label, {
+    this.traitBadge = this.scene.add.text(cx, cy + 9, traitLabel, {
       fontSize: '11px',
       fontFamily: 'monospace',
       color,
@@ -178,32 +293,23 @@ export class Enemy {
       strokeThickness: 3,
       align: 'center',
     });
-    this.badgeText.setOrigin(0.5, 0.5);
-    this.badgeText.setDepth(7);
+    this.traitBadge.setOrigin(0.5, 0.5);
+    this.traitBadge.setDepth(7);
   }
 
   // ──────────────── DAMAGE / HEAL ────────────────
 
-  /**
-   * Deal damage to this enemy, applying trait modifiers.
-   * @param amount  Raw damage amount
-   * @param element Element of the attacking power (null = no element)
-   * @returns true if the enemy is now dead (hp ≤ 0)
-   */
   takeDamage(amount: number, element?: string | null): boolean {
-    // Warded: immune to a specific element
     if (this.trait === 'warded' && element && element === this.wardedElement) {
       return false;
     }
 
-    // Shielded: absorb the first hit entirely
     if (this.trait === 'shielded' && this.shieldActive) {
       this.shieldActive = false;
-      this.drawBadge(); // update badge color to "used"
+      this.drawTraitBadge();
       return false;
     }
 
-    // Armored: take 1 less damage per hit, minimum 1
     let effective = amount;
     if (this.trait === 'armored') {
       effective = Math.max(1, amount - 1);
@@ -212,7 +318,6 @@ export class Enemy {
     this.hp = Math.max(0, this.hp - effective);
     this.drawHpBar();
 
-    // Flash briefly on hit
     this.body.setAlpha(0.4);
     this.spriteImage?.setAlpha(0.4);
     this.scene.time.delayedCall(120, () => {
@@ -227,12 +332,8 @@ export class Enemy {
     return this.hp <= 0;
   }
 
-  /**
-   * Heal this enemy (used by 'regenerating' trait).
-   * @param amount HP to restore (capped at maxHp)
-   */
   heal(amount: number): void {
-    if (this.hp <= 0) return; // don't heal dead enemies
+    if (this.hp <= 0) return;
     this.hp = Math.min(this.maxHp, this.hp + amount);
     this.drawHpBar();
   }
@@ -241,13 +342,12 @@ export class Enemy {
 
   private drawBody(): void {
     this.body.clear();
-    const hasSpriteKey = Enemy.spriteKeyForSize(this.widthInCells, this.heightInCells) !== null;
+    const spriteKey = `enemy-${this.type}`;
+    const hasSpriteKey = this.scene.textures.exists(spriteKey);
     if (hasSpriteKey) {
-      // Dark backing panel behind the sprite
       this.body.fillStyle(0x000000, 0.45);
       this.body.fillRect(this.worldX, this.worldY, this.worldW, this.worldH);
     } else {
-      // Fallback: colored rectangle with crosshatch for unknown sizes
       this.body.fillStyle(this.color, 0.85);
       this.body.fillRect(this.worldX, this.worldY, this.worldW, this.worldH);
       this.body.lineStyle(2, 0xffffff, 0.5);
@@ -269,7 +369,6 @@ export class Enemy {
     const barH = 6;
     const barY = this.worldY - barH - 3;
 
-    // Color: green → yellow → red
     let barColor = 0x44cc44;
     if (ratio <= 0.25) barColor = 0xcc4444;
     else if (ratio <= 0.5) barColor = 0xccaa22;
@@ -282,34 +381,41 @@ export class Enemy {
 
   // ──────────────── ANIMATIONS ────────────────
 
-  /**
-   * Quick horizontal shake on hit.
-   */
   private playShakeAnimation(): void {
-    const targets: Array<Phaser.GameObjects.Graphics | Phaser.GameObjects.Text | Phaser.GameObjects.Image> = [
+    const targets: Array<Phaser.GameObjects.GameObject> = [
       this.body, this.hpBarBg, this.hpBarFill, this.hpText,
     ];
     if (this.spriteImage) targets.push(this.spriteImage);
-    if (this.badgeText) targets.push(this.badgeText);
+    if (this.traitBadge) targets.push(this.traitBadge);
+    for (const inst of this.intentInstances) {
+      targets.push(inst.bg, inst.label);
+    }
 
-    // Capture each object's original x so we offset relative to it
-    const originX = targets.map(obj => obj.x);
+    const originX = (targets as Array<{ x: number }>).map(obj => obj.x);
 
     const offsets = [5, -5, 3, -3, 1, 0];
     offsets.forEach((dx, i) => {
       this.scene.time.delayedCall(i * 35, () => {
-        targets.forEach((obj, j) => { obj.x = originX[j] + dx; });
+        (targets as Array<{ x: number }>).forEach((obj, j) => { obj.x = originX[j] + dx; });
       });
     });
   }
 
-  /**
-   * Play a death animation and resolve when done.
-   */
   playDeathAnimation(scene: Phaser.Scene): Promise<void> {
-    const targets: Phaser.GameObjects.GameObject[] = [this.body, this.hpBarBg, this.hpBarFill, this.hpText];
+    // Hide tooltips immediately
+    for (const inst of this.intentInstances) {
+      inst.tooltip.setVisible(false);
+    }
+
+    const targets: Phaser.GameObjects.GameObject[] = [
+      this.body, this.hpBarBg, this.hpBarFill, this.hpText,
+    ];
     if (this.spriteImage) targets.push(this.spriteImage);
-    if (this.badgeText) targets.push(this.badgeText);
+    if (this.traitBadge) targets.push(this.traitBadge);
+    for (const inst of this.intentInstances) {
+      targets.push(inst.bg, inst.label);
+    }
+
     return new Promise(resolve => {
       scene.tweens.add({
         targets,
@@ -323,15 +429,18 @@ export class Enemy {
     });
   }
 
-  /**
-   * Destroy all Phaser objects.
-   */
   destroy(): void {
     this.body.destroy();
     this.spriteImage?.destroy();
     this.hpBarBg.destroy();
     this.hpBarFill.destroy();
     this.hpText.destroy();
-    this.badgeText?.destroy();
+    this.traitBadge?.destroy();
+    for (const inst of this.intentInstances) {
+      inst.bg.destroy();
+      inst.label.destroy();
+      inst.tooltip.destroy();
+      inst.zone.destroy();
+    }
   }
 }

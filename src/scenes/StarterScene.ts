@@ -68,7 +68,8 @@ export class StarterScene extends Phaser.Scene {
         const runState: RunState = {
           essence: 0,
           round: 1,
-          ownedPowerUps: [{ powerUpId: id, level: 1, charges: 1, maxCharges: 1 }],
+          ownedPowerUps: [{ powerUpId: id, level: 1, base: 0, multiplierPool: 0 }],
+          ownedModifiers: [],
           powerSlotCount: 4,
           passiveSlotCount: 2,
         };

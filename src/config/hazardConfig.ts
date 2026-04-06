@@ -14,7 +14,6 @@ export interface HazardDefinition {
   blockSwap?: boolean;          // Gem can't be swapped while hazard is present
   spreads?: boolean;            // Thorn Vine: spreads to adjacent gems
   spreadInterval?: number;      // Thorn Vine: turns between spreads (default 2)
-  onDestroyDrainCharge?: boolean; // Energy Siphon: drain 1 active charge on destroy
 }
 
 // Hard cap on total hazards placed per round across all types
@@ -82,22 +81,6 @@ export const HAZARD_DEFINITIONS: HazardDefinition[] = [
     ],
   },
 
-  // ─── ENERGY SIPHON ───
-  // 2 HP. Drains 1 charge on destroy. Introduced round 12.
-  {
-    id: 'energySiphon',
-    name: 'Energy Siphon',
-    hp: 2,
-    color: 0xcc3366,
-    onDestroyDrainCharge: true,
-    roundEntries: [
-      { round: 12, min: 0, max: 1 },
-      { round: 14, min: 1, max: 2 },
-      { round: 16, min: 1, max: 3 },
-      { round: 18, min: 2, max: 3 },
-      { round: 20, min: 2, max: 4 },
-    ],
-  },
 ];
 
 // ─── HELPERS ───

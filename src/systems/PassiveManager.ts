@@ -8,7 +8,7 @@ import { getPowerUpDef } from '../config/powerUps.ts';
  * Called by CascadeSystem, PowerUpExecutor, and GameScene at appropriate moments.
  *
  * Passive categories:
- * - Essence bonus passives (arsonist, pirate, skybound, goldDigger, photosynthesis, powerPlant)
+ * - Essence bonus passives (arsonist, pirate, skybound, goldDigger, powerPlant)
  * - Refund passives (meteorShower, monsoon, windstorm, monolith, strikeTwice)
  * - Bonus turn passives (windWalker)
  * - Bonus damage passives (fissure, thorns)
@@ -48,7 +48,7 @@ export class PassiveManager {
   /**
    * Called when a gem is destroyed. Returns bonus essence from element-specific passives.
    * Element passives: arsonist (fire), pirate (water), skybound (air),
-   *   goldDigger (earth), photosynthesis (nature), powerPlant (lightning)
+   *   goldDigger (earth), powerPlant (lightning)
    */
   onGemDestroyed(gemElement: string): { bonusEssence: number } {
     const result = { bonusEssence: 0 };
@@ -59,7 +59,6 @@ export class PassiveManager {
       water: 'pirate',
       air: 'skybound',
       earth: 'goldDigger',
-      nature: 'photosynthesis',
       lightning: 'powerPlant',
     };
 
@@ -76,59 +75,21 @@ export class PassiveManager {
   }
 
   /**
-   * Called when damage is about to be dealt. Returns whether to refund a charge.
-   * Refund passives give a chance to refund the active power charge on use.
+   * Called when damage is about to be dealt.
    */
   onDamageDealt(
-    damageElement: string | null,
+    _damageElement: string | null,
     amount: number,
-    activePowerId?: string,
-  ): { modifiedDamage: number; refundCharge: boolean } {
-    const modifiedDamage = amount;
-    let refundCharge = false;
-
-    if (!damageElement) return { modifiedDamage, refundCharge };
-
-    // Refund passives: chance to refund the active power charge on use
-    if (activePowerId) {
-      const refundPassiveMap: Record<string, string> = {
-        fireball:    'meteorShower',
-        watergun:    'monsoon',
-        gust:        'windstorm',
-        earthquake:  'monolith',
-        chainstrike: 'strikeTwice',
-      };
-
-      const refundId = refundPassiveMap[activePowerId];
-      if (refundId) {
-        const params = this.getPassiveParams(refundId);
-        if (params && params.refundChance) {
-          if (Math.random() * 100 < params.refundChance) {
-            refundCharge = true;
-            this.onFlashCard?.(refundId);
-          }
-        }
-      }
-    }
-
-    return { modifiedDamage, refundCharge };
+    _activePowerId?: string,
+  ): { modifiedDamage: number } {
+    return { modifiedDamage: amount };
   }
 
   /**
    * Called when a match is completed. Returns bonus essence.
-   * Wild Growth: flat bonus essence per match.
    */
   onMatchCompleted(_matchElement: string, _matchLength: number): { bonusEssence: number; bonusScore: number } {
-    const result = { bonusEssence: 0, bonusScore: 0 };
-
-    // Wild Growth: flat bonus essence per match
-    const wildGrowthParams = this.getPassiveParams('wildGrowth');
-    if (wildGrowthParams && wildGrowthParams.bonusEssence) {
-      result.bonusEssence += wildGrowthParams.bonusEssence;
-      this.onFlashCard?.('wildGrowth');
-    }
-
-    return result;
+    return { bonusEssence: 0, bonusScore: 0 };
   }
 
   /**

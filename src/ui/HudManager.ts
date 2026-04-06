@@ -65,7 +65,7 @@ export class HudManager {
     if (this.getIsSwapping()) return;
 
     const owned = this.ownedPowerUps.find(p => p.powerUpId === id);
-    if (!owned || (owned.charges ?? 0) <= 0) return;
+    if (!owned || owned.base <= 0) return;
 
     // Toggle off if already in targeting mode for this power
     if (this.activePowerUpId === id) {

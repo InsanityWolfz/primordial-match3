@@ -29,14 +29,12 @@ export class WaterPowerExecutor {
    * Water Gun: hit random gems for damage.
    * Non-targeted active power.
    */
-  async executeWaterGun(level: number): Promise<void> {
+  async executeWaterGun(level: number, computedDamage: number): Promise<void> {
     const params = this.getParams('watergun', level);
     const targetCount = params.targetCount ?? 9;
-    let damage = params.damage ?? 1;
+    const damage = computedDamage;
 
-    // Passive: crit chance + refund
-    const passiveResult = this.passiveManager.onDamageDealt('water', damage, 'watergun');
-    damage = passiveResult.modifiedDamage;
+    this.passiveManager.onDamageDealt('water', damage, 'watergun');
 
     const available: { row: number; col: number }[] = [];
     for (let r = 0; r < this.ctx.grid.rows; r++) {
@@ -82,11 +80,6 @@ export class WaterPowerExecutor {
       await this.cascadeSystem.processCascade(matches, 1);
     }
 
-    // Passive: refund charge
-    if (passiveResult.refundCharge) {
-      const owned = this.ctx.ownedPowerUps.find(p => p.powerUpId === 'watergun');
-      if (owned) owned.charges++;
-    }
   }
 
   /**

@@ -38,14 +38,12 @@ export class AirPowerExecutor {
    * Gust: clear random row(s) for damage.
    * Non-targeted active power.
    */
-  async executeGust(level: number): Promise<void> {
+  async executeGust(level: number, computedDamage: number): Promise<void> {
     const params = this.getParams('gust', level);
     const rowCount = params.rowCount ?? 1;
-    let damage = params.damage ?? 1;
+    const damage = computedDamage;
 
-    // Passive: crit chance + refund
-    const passiveResult = this.passiveManager.onDamageDealt('air', damage, 'gust');
-    damage = passiveResult.modifiedDamage;
+    this.passiveManager.onDamageDealt('air', damage, 'gust');
 
     const positions: { row: number; col: number }[] = [];
     const posSet = new Set<string>();
@@ -90,11 +88,6 @@ export class AirPowerExecutor {
       await this.cascadeSystem.processCascade(matches, 1);
     }
 
-    // Passive: refund charge
-    if (passiveResult.refundCharge) {
-      const owned = this.ctx.ownedPowerUps.find(p => p.powerUpId === 'gust');
-      if (owned) owned.charges++;
-    }
   }
 
   /**

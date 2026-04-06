@@ -6,10 +6,9 @@ import type { Gem } from './Gem.ts';
 export class Hazard {
   // Map hazard IDs to their sprite keys — add entries here as sprites are created
   private static readonly SPRITE_KEYS: Partial<Record<string, string>> = {
-    ice:          'hazard-ice',
-    stone:        'hazard-stone',
-    thornVine:    'hazard-thornVine',
-    energySiphon: 'hazard-energySiphon',
+    ice:       'hazard-ice',
+    stone:     'hazard-stone',
+    thornVine: 'hazard-thornVine',
   };
 
   scene: Phaser.Scene;
@@ -171,34 +170,6 @@ export class Hazard {
       graphics.lineStyle(2, this.def.color, 0.8);
       graphics.strokeRect(-half, -half, GAME_CONFIG.gemSize, GAME_CONFIG.gemSize);
 
-    } else if (this.def.id === 'energySiphon') {
-      // Energy Siphon: dark magenta overlay with drain spiral
-      graphics.fillStyle(this.def.color, 0.25);
-      graphics.fillRect(-half, -half, GAME_CONFIG.gemSize, GAME_CONFIG.gemSize);
-
-      // Spiral/drain pattern — concentric arcs
-      graphics.lineStyle(2, this.def.color, 0.7);
-      // Inner ring
-      graphics.strokeCircle(0, 0, 8);
-      // Middle ring (partial arc via short line segments)
-      const midR = 16;
-      for (let a = 0; a < Math.PI * 1.5; a += 0.3) {
-        const x1 = Math.cos(a) * midR;
-        const y1 = Math.sin(a) * midR;
-        const x2 = Math.cos(a + 0.3) * midR;
-        const y2 = Math.sin(a + 0.3) * midR;
-        graphics.lineBetween(x1, y1, x2, y2);
-      }
-      // Inward arrows
-      graphics.lineStyle(2, this.def.color, 0.6);
-      graphics.lineBetween(-20, 0, -10, 0);
-      graphics.lineBetween(20, 0, 10, 0);
-      graphics.lineBetween(0, -20, 0, -10);
-      graphics.lineBetween(0, 20, 0, 10);
-
-      // Border
-      graphics.lineStyle(2, this.def.color, 0.9);
-      graphics.strokeRect(-half, -half, GAME_CONFIG.gemSize, GAME_CONFIG.gemSize);
     }
   }
 

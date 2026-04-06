@@ -4,6 +4,7 @@ import { Gem } from '../entities/Gem.ts';
 import type { GameContext } from '../types/GameContext.ts';
 import type { DamageSystem } from './DamageSystem.ts';
 import type { PassiveManager } from './PassiveManager.ts';
+import { getPowerUpDef } from '../config/powerUps.ts';
 
 export class CascadeSystem {
   private ctx: GameContext;
@@ -14,6 +15,7 @@ export class CascadeSystem {
   // Per-round essence tracking callbacks
   private onMatchGroupCb?: (element: string, size: number) => void;
   private onGemsDestroyedCb?: (count: number) => void;
+  private onPowerAccumulatedCb?: () => void;
 
   constructor(ctx: GameContext, executePostMatchPassives: (matchPositions: { row: number; col: number }[]) => Promise<void>) {
     this.ctx = ctx;
@@ -41,27 +43,31 @@ export class CascadeSystem {
     this.onGemsDestroyedCb = cb;
   }
 
+  /** Called after power accumulation updates so the HUD can refresh in real time. */
+  setOnPowerAccumulated(cb: () => void): void {
+    this.onPowerAccumulatedCb = cb;
+  }
+
   async processCascade(matches: { row: number; col: number }[], cascadeLevel: number): Promise<void> {
-    // Identify match groups for charge refunds and multiplier tracking
+    // Identify match groups for essence multiplier tracking and power accumulation
     const groups = this.ctx.grid.findMatchGroups(
       (r, c) => this.ctx.hazardManager.hasHazard(r, c),
     );
 
-    // Fire per-group callbacks (charge refund + essence multiplier)
+    // Fire per-group callbacks (essence multiplier)
     for (const group of groups) {
       this.onMatchGroupCb?.(group.element, group.size);
     }
+
+    // Accumulate base damage and multiplier pools for owned active powers
+    this.accumulatePowerProgress(groups, cascadeLevel);
 
     // Passive: match completed bonuses
     if (this.passiveManager) {
       const matchElement = matches.length > 0
         ? (this.ctx.grid.getGem(matches[0].row, matches[0].col)?.type.name ?? '')
         : '';
-      const matchResult = this.passiveManager.onMatchCompleted(matchElement, matches.length);
-      if (matchResult.bonusEssence > 0) {
-        this.ctx.essence += matchResult.bonusEssence;
-        this.ctx.updateEssenceDisplay();
-      }
+      this.passiveManager.onMatchCompleted(matchElement, matches.length);
     }
 
     // Destroy matched gems (DamageSystem handles animation + grid clearing)
@@ -94,6 +100,79 @@ export class CascadeSystem {
     }
   }
 
+  // ──────────────── POWER PROGRESS ACCUMULATION ────────────────
+
+  /**
+   * For each match group, add base damage to the corresponding element's active power
+   * and check each element's unique multiplier trigger condition.
+   * Also adds Air's per-cascade-hop multiplier.
+   */
+  private accumulatePowerProgress(
+    groups: { positions: { row: number; col: number }[]; element: string; size: number }[],
+    cascadeLevel: number,
+  ): void {
+    const activePowers = this.ctx.ownedPowerUps.filter(p => {
+      const def = getPowerUpDef(p.powerUpId);
+      return def?.category === 'activePower';
+    });
+
+    if (activePowers.length === 0) return;
+
+    for (const group of groups) {
+      // Base: +1 per gem in the match for the matching element's power
+      const matchingPower = activePowers.find(p => getPowerUpDef(p.powerUpId)?.element === group.element);
+      if (matchingPower) {
+        matchingPower.base += group.size;
+      }
+
+      // Multiplier triggers per element
+      for (const power of activePowers) {
+        const element = getPowerUpDef(power.powerUpId)?.element;
+        switch (element) {
+          case 'fire':
+            if (group.element === 'fire') {
+              if (group.size >= 5) power.multiplierPool += 3;
+              else if (group.size === 4) power.multiplierPool += 2;
+            }
+            break;
+          case 'water':
+            if (group.element === 'water') {
+              const adjacentToThreat = group.positions.some(p => this.isAdjacentToThreat(p.row, p.col));
+              if (adjacentToThreat) power.multiplierPool += 1.5;
+            }
+            break;
+          case 'earth':
+            // Any match-4+ of any element
+            if (group.size >= 4) power.multiplierPool += 2;
+            break;
+          // Air and Lightning handled separately below / in GameScene
+        }
+      }
+    }
+
+    // Air: +1.5 multiplier per cascade level (every call to processCascade)
+    const airPower = activePowers.find(p => getPowerUpDef(p.powerUpId)?.element === 'air');
+    if (airPower) {
+      airPower.multiplierPool += 1.5;
+    }
+
+    // Notify HUD of updated values in real time
+    void cascadeLevel;
+    this.onPowerAccumulatedCb?.();
+  }
+
+  private isAdjacentToThreat(row: number, col: number): boolean {
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]] as const;
+    for (const [dr, dc] of dirs) {
+      const nr = row + dr;
+      const nc = col + dc;
+      if (nr < 0 || nr >= GAME_CONFIG.gridRows || nc < 0 || nc >= GAME_CONFIG.gridCols) continue;
+      if (this.ctx.hazardManager.hasHazard(nr, nc)) return true;
+      if (this.ctx.grid.isEnemyTile(nr, nc)) return true;
+    }
+    return false;
+  }
+
   async applyGravityAndSpawn(): Promise<void> {
     const gravityMoves = this.ctx.grid.applyGravity();
     if (gravityMoves.length > 0) {
@@ -124,13 +203,9 @@ export class CascadeSystem {
         const gemType = this.ctx.getRandomGemType();
         const gem = new Gem(this.ctx.phaserScene, row, col, gemType, GAME_CONFIG.gemSize);
 
-        // Maybe spawn as hazard (dynamic hazard chance)
-        const hazardSpawned = this.ctx.hazardManager.maybeSpawnHazardOnGem(row, col, gem);
-        if (!hazardSpawned) {
-          // Normal spawn — position above grid and animate falling
-          const spawnY = GAME_CONFIG.gridOffsetY - (i + 1) * (GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding);
-          gem.sprite.setPosition(gem.sprite.x, spawnY);
-        }
+        // Position above grid and animate falling
+        const spawnY = GAME_CONFIG.gridOffsetY - (i + 1) * (GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding);
+        gem.sprite.setPosition(gem.sprite.x, spawnY);
 
         this.ctx.grid.setGem(row, col, gem);
         gem.sprite.on('pointerdown', (pointer: Phaser.Input.Pointer) => this.ctx.onGemPointerDown(gem, pointer));

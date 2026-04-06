@@ -98,9 +98,9 @@ export class TitleScene extends Phaser.Scene {
 
     // ── POWERS ──
     y = this.drawSection('POWERS', y, [
-      'Powers are free to use but have limited charges per round.',
-      'Matching gems of your power\'s element refunds charges.',
-      'Active powers deal damage. Passives trigger automatically.',
+      'Match gems of your power\'s element to build up base damage.',
+      'Special match combos increase your damage multiplier.',
+      'Active powers deal damage when fired. Passives trigger automatically.',
     ]);
 
     y += sectionGap;

@@ -6,16 +6,19 @@ import { FirePowerExecutor } from './powers/FirePowerExecutor.ts';
 import { WaterPowerExecutor } from './powers/WaterPowerExecutor.ts';
 import { AirPowerExecutor } from './powers/AirPowerExecutor.ts';
 import { EarthPowerExecutor } from './powers/EarthPowerExecutor.ts';
-import { NaturePowerExecutor } from './powers/NaturePowerExecutor.ts';
 import { LightningPowerExecutor } from './powers/LightningPowerExecutor.ts';
 
 /**
- * PowerUpExecutor: thin dispatcher that delegates to per-element executors.
- * Powers do NOT cost turns — only successful matches cost turns.
+ * PowerUpExecutor: dispatches to per-element executors.
+ *
+ * New power model:
+ *  - Powers have a `base` damage pool and a `multiplierPool`.
+ *  - Firing is only allowed when base > 0.
+ *  - Firing costs 1 turn.
+ *  - Damage = base × max(1, multiplierPool). Both reset to 0 after firing.
  */
 export class PowerUpExecutor {
   private ctx: GameContext;
-  private updateHudCharges: () => void;
   private cancelTargeting: () => void;
   private endRound: () => Promise<void>;
   private onActionComplete: () => void;
@@ -25,14 +28,12 @@ export class PowerUpExecutor {
   private waterExecutor!: WaterPowerExecutor;
   private airExecutor!: AirPowerExecutor;
   private earthExecutor!: EarthPowerExecutor;
-  private natureExecutor!: NaturePowerExecutor;
   private lightningExecutor!: LightningPowerExecutor;
 
   constructor(
     ctx: GameContext,
     _cascadeSystem: CascadeSystem,
     callbacks: {
-      updateHudCharges: () => void;
       cancelTargeting: () => void;
       endRound: () => Promise<void>;
       onActionComplete: () => void;
@@ -40,7 +41,6 @@ export class PowerUpExecutor {
     },
   ) {
     this.ctx = ctx;
-    this.updateHudCharges = callbacks.updateHudCharges;
     this.cancelTargeting = callbacks.cancelTargeting;
     this.endRound = callbacks.endRound;
     this.onActionComplete = callbacks.onActionComplete;
@@ -56,8 +56,29 @@ export class PowerUpExecutor {
     this.waterExecutor = new WaterPowerExecutor(this.ctx, cascadeSystem, damageSystem, passiveManager);
     this.airExecutor = new AirPowerExecutor(this.ctx, cascadeSystem, damageSystem, passiveManager);
     this.earthExecutor = new EarthPowerExecutor(this.ctx, cascadeSystem, damageSystem, passiveManager);
-    this.natureExecutor = new NaturePowerExecutor(this.ctx, cascadeSystem);
     this.lightningExecutor = new LightningPowerExecutor(this.ctx, cascadeSystem, damageSystem, passiveManager);
+  }
+
+  // ──────────────── HELPERS ────────────────
+
+  /**
+   * Compute and consume a power's accumulated damage.
+   * Returns 0 (and does not consume) if base is 0.
+   */
+  private consumePower(id: string): number {
+    const owned = this.ctx.ownedPowerUps.find(p => p.powerUpId === id);
+    if (!owned || owned.base <= 0) return 0;
+
+    const damage = Math.floor(owned.base * Math.max(1, owned.multiplierPool));
+    owned.base = 0;
+    owned.multiplierPool = 0;
+    return damage;
+  }
+
+  /** Spend one turn for a power activation. */
+  private spendTurn(): void {
+    this.ctx.turnsRemaining--;
+    this.ctx.updateTurnsDisplay();
   }
 
   // ──────────────── DISPATCH ────────────────
@@ -65,100 +86,71 @@ export class PowerUpExecutor {
   async executeNonTargetedPowerUp(id: string): Promise<void> {
     this.ctx.isSwapping = true;
     const owned = this.ctx.ownedPowerUps.find(p => p.powerUpId === id);
-    if (!owned || owned.charges <= 0) {
+    if (!owned || owned.base <= 0) {
       this.cancelTargeting();
       this.ctx.isSwapping = false;
       return;
     }
 
-    owned.charges--;
-    this.updateHudCharges();
+    const computedDamage = this.consumePower(id);
+    this.spendTurn();
     this.onFlashCard(id);
     this.cancelTargeting();
 
-    // Powers do NOT cost turns
     switch (id) {
       case 'earthquake':
-        await this.earthExecutor.executeEarthquake(owned.level);
+        await this.earthExecutor.executeEarthquake(owned.level, computedDamage);
         break;
       case 'gust':
-        await this.airExecutor.executeGust(owned.level);
+        await this.airExecutor.executeGust(owned.level, computedDamage);
         break;
       case 'watergun':
-        await this.waterExecutor.executeWaterGun(owned.level);
+        await this.waterExecutor.executeWaterGun(owned.level, computedDamage);
         break;
     }
 
     this.onActionComplete();
     this.ctx.isSwapping = false;
 
-    // Always check: auto-win if enemies dead, auto-lose if turns+charges exhausted
     await this.checkEndCondition();
   }
 
   async executeTargetedPowerUp(id: string, row: number, col: number): Promise<void> {
     this.ctx.isSwapping = true;
     const owned = this.ctx.ownedPowerUps.find(p => p.powerUpId === id);
-    if (!owned || owned.charges <= 0) {
+    if (!owned || owned.base <= 0) {
       this.cancelTargeting();
       this.ctx.isSwapping = false;
       return;
     }
 
+    const computedDamage = this.consumePower(id);
+    this.spendTurn();
+    this.onFlashCard(id);
     this.cancelTargeting();
 
-    if (id === 'transmute') {
-      const confirmed = await this.natureExecutor.executeTransmute(owned.level, row, col);
-      if (!confirmed) {
-        this.updateHudCharges();
-        this.ctx.isSwapping = false;
-        return;
-      }
-      owned.charges--;
-      this.updateHudCharges();
-      this.onFlashCard(id);
-    } else {
-      owned.charges--;
-      this.updateHudCharges();
-      this.onFlashCard(id);
-
-      // Powers do NOT cost turns
-      switch (id) {
-        case 'fireball':
-          await this.fireExecutor.executeFireball(owned.level, row, col);
-          break;
-        case 'chainstrike':
-          await this.lightningExecutor.executeChainStrike(owned.level, row, col);
-          break;
-      }
+    switch (id) {
+      case 'fireball':
+        await this.fireExecutor.executeFireball(owned.level, row, col, computedDamage);
+        break;
+      case 'chainstrike':
+        await this.lightningExecutor.executeChainStrike(owned.level, row, col, computedDamage);
+        break;
     }
 
     this.onActionComplete();
     this.ctx.isSwapping = false;
 
-    // Always check: auto-win if enemies dead, auto-lose if turns+charges exhausted
     await this.checkEndCondition();
   }
 
-  /**
-   * After turns hit 0, check if the player can still act.
-   * Lose if turns = 0 AND no power charges remain.
-   * If all enemies are dead, go to shop regardless.
-   */
   private async checkEndCondition(): Promise<void> {
-    // Win: enemies cleared by a power — advance to shop regardless of turns left
     if (this.ctx.enemyManager.allEnemiesDead()) {
       await this.endRound();
       return;
     }
-
-    // Lose: only when turns AND charges are both exhausted
-    // If turns remain the player can still make matches, so never lose mid-turn
     if (this.ctx.turnsRemaining <= 0) {
-      const hasCharges = this.ctx.ownedPowerUps.some(p => p.charges > 0);
-      if (!hasCharges) {
-        await this.endRound();
-      }
+      await this.endRound();
     }
   }
 

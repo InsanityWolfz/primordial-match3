@@ -11,16 +11,12 @@ export interface GameContext {
   grid: Grid;
   hazardManager: HazardManager;
   enemyManager: EnemyManager;
-  essence: number;
   round: number;
   turnsRemaining: number;
   isSwapping: boolean;
   ownedPowerUps: OwnedPowerUp[];
-  powerSlotCount: number;
-  passiveSlotCount: number;
 
   // UI updates
-  updateEssenceDisplay(): void;
   updateTurnsDisplay(): void;
   updateEnemyDisplay(): void;
   showDamageNumber(worldX: number, worldY: number, amount: number, element?: string | null, isEnemy?: boolean): void;

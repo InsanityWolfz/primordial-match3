@@ -29,14 +29,12 @@ export class LightningPowerExecutor {
    * Lightning (Chain Strike): chain destroy from target gem.
    * Zig-zag pattern, warps to opposite corner when stuck.
    */
-  async executeChainStrike(level: number, startRow: number, startCol: number): Promise<void> {
+  async executeChainStrike(level: number, startRow: number, startCol: number, computedDamage: number): Promise<void> {
     const params = this.getParams('chainstrike', level);
     const maxChain = params.chainCount ?? 9;
-    let damage = params.damage ?? 1;
+    const damage = computedDamage;
 
-    // Passive: crit chance + refund
-    const passiveResult = this.passiveManager.onDamageDealt('lightning', damage, 'chainstrike');
-    damage = passiveResult.modifiedDamage;
+    this.passiveManager.onDamageDealt('lightning', damage, 'chainstrike');
 
     const positions: { row: number; col: number }[] = [{ row: startRow, col: startCol }];
     const visited = new Set<string>();
@@ -146,11 +144,6 @@ export class LightningPowerExecutor {
       await this.cascadeSystem.processCascade(matches, 1);
     }
 
-    // Passive: refund charge
-    if (passiveResult.refundCharge) {
-      const owned = this.ctx.ownedPowerUps.find(p => p.powerUpId === 'chainstrike');
-      if (owned) owned.charges++;
-    }
   }
 
   /**

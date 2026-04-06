@@ -432,9 +432,10 @@ export class ShopScene extends Phaser.Scene {
       fontSize: '11px', color: isMaxLevel ? '#ffcc00' : '#888899', fontFamily: 'Arial',
     }));
 
-    // Charges info (right of level row, active powers only)
+    // Damage accumulation info (right of level row, active powers only)
     if (def.category === 'activePower') {
-      objects.push(this.add.text(x + w - 6, y + 26, `${ownedEntry.maxCharges} charges`, {
+      const mult = Math.max(1, ownedEntry.multiplierPool);
+      objects.push(this.add.text(x + w - 6, y + 26, `${ownedEntry.base} × ${mult}`, {
         fontSize: '10px', color: '#666677', fontFamily: 'Arial',
       }).setOrigin(1, 0));
     }
@@ -761,16 +762,12 @@ export class ShopScene extends Phaser.Scene {
 
     if (owned) {
       owned.level += 1;
-      const levelDef = def.levels[owned.level - 1];
-      owned.maxCharges = levelDef.charges ?? 0;
-      owned.charges = levelDef.charges ?? 0;
     } else {
-      const levelDef = def.levels[0];
       this.runState.ownedPowerUps.push({
         powerUpId,
         level: 1,
-        charges: levelDef.charges ?? 0,
-        maxCharges: levelDef.charges ?? 0,
+        base: 0,
+        multiplierPool: 0,
       });
     }
 
@@ -820,13 +817,15 @@ export class ShopScene extends Phaser.Scene {
   private startNextRound(): void {
     const refreshedPowerUps = this.runState.ownedPowerUps.map(p => ({
       ...p,
-      charges: p.maxCharges,
+      base: 0,
+      multiplierPool: 0,
     }));
 
     this.scene.start('GameScene', {
       essence: this.runState.essence,
       round: this.runState.round + 1,
       ownedPowerUps: refreshedPowerUps,
+      ownedModifiers: this.runState.ownedModifiers ?? [],
       powerSlotCount: this.runState.powerSlotCount,
       passiveSlotCount: this.runState.passiveSlotCount,
       runId: this.runState.runId,

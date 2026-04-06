@@ -137,18 +137,6 @@ export class ShopCardRenderer {
       fontFamily: 'Arial',
     }));
 
-    // Charges info for active powers (right-aligned on level row)
-    if (def.category === 'activePower') {
-      const nextLevelDef = def.levels[currentLevel] ?? def.levels[def.maxLevel - 1];
-      if (nextLevelDef.charges) {
-        objects.push(this.scene.add.text(x + w - 10, y + 26, `${nextLevelDef.charges} charges/round`, {
-          fontSize: '10px',
-          color: affordable ? '#888888' : '#444444',
-          fontFamily: 'Arial',
-        }).setOrigin(1, 0));
-      }
-    }
-
     // Description (row 3, word-wrapped)
     const descIndex = isMaxLevel ? currentLevel - 1 : currentLevel;
     const descText = def.levels[descIndex]?.description ?? '';

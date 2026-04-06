@@ -40,7 +40,7 @@ export class FailScene extends Phaser.Scene {
     }).setOrigin(0.5, 0.5);
 
     // Essence earned
-    this.add.text(cx, 350, `Essence Earned: ${this.runState.essence}`, {
+    this.add.text(cx, 350, `Essence Earned: ${this.runState.essence ?? 0}`, {
       fontSize: '24px',
       color: '#aaaaaa',
       fontFamily: 'Arial',
@@ -54,7 +54,7 @@ export class FailScene extends Phaser.Scene {
       fontStyle: 'bold',
     }).setOrigin(0.5, 0.5);
 
-    this.add.text(cx, 480, 'Turns ran out with no power charges remaining.', {
+    this.add.text(cx, 480, 'Turns ran out before all enemies were defeated.', {
       fontSize: '16px',
       color: '#888888',
       fontFamily: 'Arial',

@@ -26,7 +26,6 @@ export const GAME_CONFIG = {
     { id: 2, name: 'earth', color: 0x8b6914 },
     { id: 3, name: 'air', color: 0xe8e8e8 },
     { id: 4, name: 'lightning', color: 0xffdd00 },
-    { id: 5, name: 'nature', color: 0x44bb44 },
   ] as GemType[],
 
   // Animation settings
