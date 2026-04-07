@@ -76,6 +76,20 @@ export class InventoryBar {
     }
   }
 
+  /** Shake a circle when its charge is drained to zero. */
+  shakeCard(id: string): void {
+    const data = this.circleMap.get(id);
+    if (!data) return;
+    const targets = [data.bg, data.ring];
+    const originX = data.cx;
+    const offsets = [6, -6, 4, -4, 2, -2, 0];
+    offsets.forEach((dx, i) => {
+      this.scene.time.delayedCall(i * 40, () => {
+        for (const t of targets) t.x = originX + dx;
+      });
+    });
+  }
+
   /** Flash a circle when a power fires. */
   flashCard(id: string): void {
     const data = this.circleMap.get(id);
@@ -271,8 +285,8 @@ export class InventoryBar {
       nameT.setOrigin(0.5, 0).setDepth(52);
       this.elements.push(nameT);
 
-      // Level
-      const lvT = this.scene.add.text(cx, startY + 15, `Lv ${owned.level}`, {
+      // Category label
+      const lvT = this.scene.add.text(cx, startY + 15, def.element.toUpperCase(), {
         fontSize: '10px', color: '#4a4a6a', fontFamily: 'Arial',
       });
       lvT.setOrigin(0.5, 0).setDepth(52);
@@ -339,7 +353,7 @@ export class InventoryBar {
   }
 
   private renderPassiveRow(
-    owned:   OwnedPowerUp,
+    _owned:  OwnedPowerUp,
     def:     PowerUpDefinition,
     colX:    number,
     rowY:    number,
@@ -355,8 +369,8 @@ export class InventoryBar {
     dot.setDepth(51);
     this.elements.push(dot);
 
-    // Name + level
-    const t = this.scene.add.text(colX + 14, rowY, `${def.name}  Lv ${owned.level}`, {
+    // Name
+    const t = this.scene.add.text(colX + 14, rowY, def.name, {
       fontSize: '11px', color: '#5a5a88', fontFamily: 'Arial',
     });
     t.setOrigin(0, 0).setDepth(51);

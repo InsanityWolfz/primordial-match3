@@ -67,6 +67,7 @@ export class Enemy {
   private traitBadge?: Phaser.GameObjects.Text;
   private hpText!: Phaser.GameObjects.Text;
   private intentInstances: IntentInstance[] = [];
+  private shieldGraphic?: Phaser.GameObjects.Graphics;
 
   readonly worldX: number;
   readonly worldY: number;
@@ -297,6 +298,33 @@ export class Enemy {
     this.traitBadge.setDepth(7);
   }
 
+  // ──────────────── SHIELD ────────────────
+
+  /**
+   * Apply a temporary shield that absorbs the next instance of damage.
+   * Works independently of the 'shielded' trait.
+   */
+  applyShield(): void {
+    this.shieldActive = true;
+    if (!this.shieldGraphic) {
+      this.shieldGraphic = this.scene.add.graphics();
+      this.shieldGraphic.setDepth(8);
+    }
+    this.shieldGraphic.clear();
+    this.shieldGraphic.lineStyle(3, 0xffdd44, 0.95);
+    this.shieldGraphic.strokeRect(this.worldX - 3, this.worldY - 3, this.worldW + 6, this.worldH + 6);
+    this.shieldGraphic.lineStyle(1, 0xffdd44, 0.4);
+    this.shieldGraphic.strokeRect(this.worldX - 6, this.worldY - 6, this.worldW + 12, this.worldH + 12);
+  }
+
+  private clearShield(): void {
+    this.shieldActive = false;
+    this.shieldGraphic?.destroy();
+    this.shieldGraphic = undefined;
+    // Refresh trait badge in case it was showing shielded state
+    if (this.trait) this.drawTraitBadge();
+  }
+
   // ──────────────── DAMAGE / HEAL ────────────────
 
   takeDamage(amount: number, element?: string | null): boolean {
@@ -304,9 +332,9 @@ export class Enemy {
       return false;
     }
 
-    if (this.trait === 'shielded' && this.shieldActive) {
-      this.shieldActive = false;
-      this.drawTraitBadge();
+    // Shield absorbs one hit regardless of source
+    if (this.shieldActive) {
+      this.clearShield();
       return false;
     }
 
@@ -387,16 +415,17 @@ export class Enemy {
     ];
     if (this.spriteImage) targets.push(this.spriteImage);
     if (this.traitBadge) targets.push(this.traitBadge);
+    if (this.shieldGraphic) targets.push(this.shieldGraphic);
     for (const inst of this.intentInstances) {
       targets.push(inst.bg, inst.label);
     }
 
-    const originX = (targets as Array<{ x: number }>).map(obj => obj.x);
+    const originX = (targets as unknown as Array<{ x: number }>).map(obj => obj.x);
 
     const offsets = [5, -5, 3, -3, 1, 0];
     offsets.forEach((dx, i) => {
       this.scene.time.delayedCall(i * 35, () => {
-        (targets as Array<{ x: number }>).forEach((obj, j) => { obj.x = originX[j] + dx; });
+        (targets as unknown as Array<{ x: number }>).forEach((obj, j) => { obj.x = originX[j] + dx; });
       });
     });
   }
@@ -412,6 +441,7 @@ export class Enemy {
     ];
     if (this.spriteImage) targets.push(this.spriteImage);
     if (this.traitBadge) targets.push(this.traitBadge);
+    if (this.shieldGraphic) targets.push(this.shieldGraphic);
     for (const inst of this.intentInstances) {
       targets.push(inst.bg, inst.label);
     }
@@ -436,6 +466,7 @@ export class Enemy {
     this.hpBarFill.destroy();
     this.hpText.destroy();
     this.traitBadge?.destroy();
+    this.shieldGraphic?.destroy();
     for (const inst of this.intentInstances) {
       inst.bg.destroy();
       inst.label.destroy();

@@ -116,6 +116,11 @@ export class HudManager {
     this.inventoryBar?.flashCard(id);
   }
 
+  /** Shake a chip/card to show its charge was drained. */
+  shakeCard(id: string): void {
+    this.inventoryBar?.shakeCard(id);
+  }
+
   /** Exit targeting mode and reset all visuals. */
   cancelTargeting(): void {
     this.activePowerUpId = null;

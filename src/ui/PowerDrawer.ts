@@ -197,7 +197,7 @@ export class PowerDrawer {
     this.container.add(divider);
 
     // ── Sort cards ──
-    const ELEMENT_ORDER = ['fire', 'water', 'air', 'earth', 'lightning'];
+    const ELEMENT_ORDER = ['fire', 'ice', 'air', 'earth', 'lightning'];
     const CATEGORY_ORDER: Record<string, number> = { activePower: 0, passivePower: 1, passive: 2 };
     const sorted = [...this.ownedPowerUps].sort((a, b) => {
       const defA = getPowerUpDef(a.powerUpId);
@@ -262,7 +262,6 @@ export class PowerDrawer {
 
     const gemType   = GAME_CONFIG.gemTypes.find(g => g.name === def.element);
     const color     = gemType?.color ?? 0x888888;
-    const levelData = def.levels[Math.min(owned.level, def.maxLevel) - 1];
     const isActive  = def.category === 'activePower';
     const hasBase   = isActive && owned.base > 0;
 
@@ -286,18 +285,18 @@ export class PowerDrawer {
     });
     this.cardContainer.add(nameT);
 
-    // Level · Category
+    // Category
     const catLabel = isActive
       ? 'Active Power'
       : (def.category === 'passivePower' ? 'Passive Power' : 'Passive Stat');
-    const lvlT = this.scene.add.text(x + 12, y + 28, `Lv ${owned.level}  ·  ${catLabel}`, {
+    const lvlT = this.scene.add.text(x + 12, y + 28, catLabel, {
       fontSize: '11px', color: '#555588', fontFamily: 'Arial',
     });
     this.cardContainer.add(lvlT);
 
     // Description
     const descRight = isActive ? w - 160 : w - 20;
-    const desc      = levelData?.description ?? '';
+    const desc      = def.description;
     const descT = this.scene.add.text(x + 12, y + 46, desc, {
       fontSize: '12px', color: '#7777aa', fontFamily: 'Arial',
       wordWrap: { width: descRight },

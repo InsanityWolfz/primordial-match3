@@ -18,23 +18,15 @@ export class LightningPowerExecutor {
     this.passiveManager = passiveManager;
   }
 
-  private getParams(id: string, level: number): Record<string, number> {
-    const def = getPowerUpDef(id);
-    if (!def) return {};
-    const clampedLevel = Math.min(Math.max(level, 1), def.maxLevel);
-    return def.levels[clampedLevel - 1]?.params ?? {};
-  }
-
   /**
-   * Lightning (Chain Strike): chain destroy from target gem.
-   * Zig-zag pattern, warps to opposite corner when stuck.
+   * Lightning (Chain Strike): chain destroy from target gem in a zig-zag pattern.
+   * chainCount comes from the power's flat params.
    */
-  async executeChainStrike(level: number, startRow: number, startCol: number, computedDamage: number): Promise<void> {
-    const params = this.getParams('chainstrike', level);
-    const maxChain = params.chainCount ?? 9;
-    const damage = computedDamage;
+  async executeChainStrike(startRow: number, startCol: number, computedDamage: number): Promise<void> {
+    const params = getPowerUpDef('chainstrike')?.params ?? {};
+    const maxChain = params.chainCount ?? 14;
 
-    this.passiveManager.onDamageDealt('lightning', damage, 'chainstrike');
+    this.passiveManager.onDamageDealt('lightning', computedDamage, 'chainstrike');
 
     const positions: { row: number; col: number }[] = [{ row: startRow, col: startCol }];
     const visited = new Set<string>();
@@ -50,7 +42,6 @@ export class LightningPowerExecutor {
     let diagIdx = Math.floor(Math.random() * 4);
     let stepIdx = 0;
     let rotationAttempts = 0;
-
     let curRow = startRow;
     let curCol = startCol;
 
@@ -88,7 +79,8 @@ export class LightningPowerExecutor {
                 const wr = oppositeRow + ddr;
                 const wc = oppositeCol + ddc;
                 const wKey = `${wr},${wc}`;
-                if (this.ctx.grid.isValidPosition(wr, wc) && !visited.has(wKey) && (this.ctx.grid.getGem(wr, wc) || this.ctx.grid.isEnemyTile(wr, wc))) {
+                if (this.ctx.grid.isValidPosition(wr, wc) && !visited.has(wKey) &&
+                  (this.ctx.grid.getGem(wr, wc) || this.ctx.grid.isEnemyTile(wr, wc))) {
                   warpTarget = { row: wr, col: wc };
                 }
               }
@@ -135,94 +127,12 @@ export class LightningPowerExecutor {
       onComplete: () => lightning.destroy(),
     });
 
-    await this.damageSystem.dealDamageSequential(positions, damage, 'lightning', 50, 3);
-
+    await this.damageSystem.dealDamageSequential(positions, computedDamage, 'lightning', 50, 3);
     await this.cascadeSystem.applyGravityAndSpawn();
 
     const matches = this.ctx.findMatches();
     if (matches.length > 0) {
       await this.cascadeSystem.processCascade(matches, 1);
     }
-
-  }
-
-  /**
-   * Capacitor: passive power that triggers after match.
-   * Chains gems adjacent to the matched gems (BFS outward), not random ones.
-   */
-  async executeCapacitorPassive(matchPositions: { row: number; col: number }[] = []): Promise<boolean> {
-    const capacitorOwned = this.ctx.ownedPowerUps.find(p => p.powerUpId === 'capacitor');
-    if (!capacitorOwned) return false;
-
-    const params = this.getParams('capacitor', capacitorOwned.level);
-    const chainCount = params.chainCount ?? 1;
-    const damage = params.damage ?? 1;
-
-    // BFS outward from match positions to find the nearest non-matched gems
-    const matchSet = new Set(matchPositions.map(p => `${p.row},${p.col}`));
-    const targets: { row: number; col: number }[] = [];
-    const visited = new Set<string>(matchSet);
-    let frontier = matchPositions.length > 0 ? [...matchPositions] : [];
-    const dirs: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-
-    while (targets.length < chainCount && frontier.length > 0) {
-      const nextFrontier: { row: number; col: number }[] = [];
-      for (const pos of frontier) {
-        for (const [dr, dc] of dirs) {
-          const nr = pos.row + dr;
-          const nc = pos.col + dc;
-          const key = `${nr},${nc}`;
-          if (!visited.has(key) && this.ctx.grid.isValidPosition(nr, nc) && (this.ctx.grid.getGem(nr, nc) || this.ctx.grid.isEnemyTile(nr, nc))) {
-            visited.add(key);
-            targets.push({ row: nr, col: nc });
-            nextFrontier.push({ row: nr, col: nc });
-          }
-        }
-      }
-      frontier = nextFrontier;
-    }
-
-    // If no adjacent targets found (e.g. no match positions), fall back to random gems
-    if (targets.length === 0) {
-      for (let r = 0; r < this.ctx.grid.rows; r++) {
-        for (let c = 0; c < this.ctx.grid.cols; c++) {
-          if (this.ctx.grid.getGem(r, c) || this.ctx.grid.isEnemyTile(r, c)) targets.push({ row: r, col: c });
-        }
-      }
-      for (let i = targets.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [targets[i], targets[j]] = [targets[j], targets[i]];
-      }
-    }
-
-    const limitedTargets = targets.slice(0, Math.min(chainCount, targets.length));
-    if (limitedTargets.length === 0) return false;
-
-    // Small lightning visual
-    const scene = this.ctx.phaserScene;
-    const lightning = scene.add.graphics();
-    const lightningColor = GAME_CONFIG.gemTypes.find(g => g.name === 'lightning')?.color ?? 0xffdd00;
-    lightning.lineStyle(2, lightningColor, 0.6);
-    const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
-
-    for (let i = 1; i < limitedTargets.length; i++) {
-      const prev = limitedTargets[i - 1];
-      const curr = limitedTargets[i];
-      const x1 = GAME_CONFIG.gridOffsetX + prev.col * cellSize + GAME_CONFIG.gemSize / 2;
-      const y1 = GAME_CONFIG.gridOffsetY + prev.row * cellSize + GAME_CONFIG.gemSize / 2;
-      const x2 = GAME_CONFIG.gridOffsetX + curr.col * cellSize + GAME_CONFIG.gemSize / 2;
-      const y2 = GAME_CONFIG.gridOffsetY + curr.row * cellSize + GAME_CONFIG.gemSize / 2;
-      lightning.lineBetween(x1, y1, x2, y2);
-    }
-    scene.tweens.add({
-      targets: lightning,
-      alpha: 0,
-      duration: 400,
-      onComplete: () => lightning.destroy(),
-    });
-
-    await this.damageSystem.dealDamageSequential(limitedTargets, damage, 'lightning', 30, 2);
-
-    return true;
   }
 }

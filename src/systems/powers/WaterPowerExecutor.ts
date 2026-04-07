@@ -3,133 +3,69 @@ import type { GameContext } from '../../types/GameContext.ts';
 import type { CascadeSystem } from '../CascadeSystem.ts';
 import type { DamageSystem } from '../DamageSystem.ts';
 import type { PassiveManager } from '../PassiveManager.ts';
-import { getPowerUpDef } from '../../config/powerUps.ts';
 
 export class WaterPowerExecutor {
   private ctx: GameContext;
   private cascadeSystem: CascadeSystem;
-  private damageSystem: DamageSystem;
   private passiveManager: PassiveManager;
 
-  constructor(ctx: GameContext, cascadeSystem: CascadeSystem, damageSystem: DamageSystem, passiveManager: PassiveManager) {
+  constructor(ctx: GameContext, cascadeSystem: CascadeSystem, _damageSystem: DamageSystem, passiveManager: PassiveManager) {
     this.ctx = ctx;
     this.cascadeSystem = cascadeSystem;
-    this.damageSystem = damageSystem;
     this.passiveManager = passiveManager;
   }
 
-  private getParams(id: string, level: number): Record<string, number> {
-    const def = getPowerUpDef(id);
-    if (!def) return {};
-    const clampedLevel = Math.min(Math.max(level, 1), def.maxLevel);
-    return def.levels[clampedLevel - 1]?.params ?? {};
-  }
-
   /**
-   * Water Gun: hit random gems for damage.
-   * Non-targeted active power.
+   * Ice Lance: pick a random living enemy and deal damage to every tile they occupy.
+   * Big enemies take proportionally more damage (tile count × damage).
+   * Non-targeted — the randomness is the cost.
    */
-  async executeWaterGun(level: number, computedDamage: number): Promise<void> {
-    const params = this.getParams('watergun', level);
-    const targetCount = params.targetCount ?? 9;
-    const damage = computedDamage;
+  async executeIceLance(computedDamage: number): Promise<void> {
+    const enemies = this.ctx.enemyManager.getEnemies().filter(e => e.hp > 0);
+    if (enemies.length === 0) return;
 
-    this.passiveManager.onDamageDealt('water', damage, 'watergun');
+    const target = enemies[Math.floor(Math.random() * enemies.length)];
+    const tileCount = target.widthInCells * target.heightInCells;
+    const totalDamage = computedDamage * tileCount;
 
-    const available: { row: number; col: number }[] = [];
-    for (let r = 0; r < this.ctx.grid.rows; r++) {
-      for (let c = 0; c < this.ctx.grid.cols; c++) {
-        if (this.ctx.grid.getGem(r, c) || this.ctx.grid.isEnemyTile(r, c)) available.push({ row: r, col: c });
+    this.passiveManager.onDamageDealt('ice', totalDamage, 'icelance');
+
+    // Visual: ice spike flash over every tile the enemy occupies
+    const scene = this.ctx.phaserScene;
+    const iceColor = GAME_CONFIG.gemTypes.find(g => g.name === 'ice')?.color ?? 0x88ddff;
+    const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
+    const gfx = scene.add.graphics();
+    gfx.setDepth(8);
+
+    for (let r = target.gridRow; r < target.gridRow + target.heightInCells; r++) {
+      for (let c = target.gridCol; c < target.gridCol + target.widthInCells; c++) {
+        const cx = GAME_CONFIG.gridOffsetX + c * cellSize + GAME_CONFIG.gemSize / 2;
+        const cy = GAME_CONFIG.gridOffsetY + r * cellSize + GAME_CONFIG.gemSize / 2;
+        // Outer cold flash
+        gfx.fillStyle(iceColor, 0.55);
+        gfx.fillCircle(cx, cy, GAME_CONFIG.gemSize / 2 + 6);
+        // White core
+        gfx.fillStyle(0xffffff, 0.35);
+        gfx.fillCircle(cx, cy, GAME_CONFIG.gemSize / 4);
       }
     }
 
-    // Shuffle and pick targets
-    for (let i = available.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [available[i], available[j]] = [available[j], available[i]];
-    }
-
-    const targets = available.slice(0, Math.min(targetCount, available.length));
-    if (targets.length === 0) return;
-
-    // Water splash visual
-    const scene = this.ctx.phaserScene;
-    const splash = scene.add.graphics();
-    const waterColor = GAME_CONFIG.gemTypes.find(g => g.name === 'water')?.color ?? 0x4488ff;
-    const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
-    for (const pos of targets) {
-      const cx = GAME_CONFIG.gridOffsetX + pos.col * cellSize + GAME_CONFIG.gemSize / 2;
-      const cy = GAME_CONFIG.gridOffsetY + pos.row * cellSize + GAME_CONFIG.gemSize / 2;
-      splash.fillStyle(waterColor, 0.4);
-      splash.fillCircle(cx, cy, GAME_CONFIG.gemSize / 2 + 4);
-    }
     scene.tweens.add({
-      targets: splash,
+      targets: gfx,
       alpha: 0,
-      duration: 400,
-      onComplete: () => splash.destroy(),
+      duration: 500,
+      ease: 'Cubic.easeOut',
+      onComplete: () => gfx.destroy(),
     });
 
-    await this.damageSystem.dealDamage(targets, damage, 'water');
+    await this.ctx.enemyManager.damageEnemy(target, totalDamage, 'ice');
 
-    // Refill board after destroying gems
+    // Refill board if any gems were not involved (enemy tiles clear on death, may expose gaps)
     await this.cascadeSystem.applyGravityAndSpawn();
 
     const matches = this.ctx.findMatches();
     if (matches.length > 0) {
       await this.cascadeSystem.processCascade(matches, 1);
     }
-
-  }
-
-  /**
-   * Splash: passive power that triggers after every match.
-   * Hits random gems for damage.
-   */
-  async executeSplashPassive(): Promise<boolean> {
-    const splashOwned = this.ctx.ownedPowerUps.find(p => p.powerUpId === 'splash');
-    if (!splashOwned) return false;
-
-    const params = this.getParams('splash', splashOwned.level);
-    const count = params.targetCount ?? 1;
-    const damage = params.damage ?? 1;
-
-    const available: { row: number; col: number }[] = [];
-    for (let r = 0; r < this.ctx.grid.rows; r++) {
-      for (let c = 0; c < this.ctx.grid.cols; c++) {
-        if (this.ctx.grid.getGem(r, c) || this.ctx.grid.isEnemyTile(r, c)) available.push({ row: r, col: c });
-      }
-    }
-
-    // Shuffle and pick
-    for (let i = available.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [available[i], available[j]] = [available[j], available[i]];
-    }
-
-    const targets = available.slice(0, Math.min(count, available.length));
-    if (targets.length === 0) return false;
-
-    // Water splash visual
-    const scene = this.ctx.phaserScene;
-    const splash = scene.add.graphics();
-    const waterColor = GAME_CONFIG.gemTypes.find(g => g.name === 'water')?.color ?? 0x4488ff;
-    const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
-    for (const pos of targets) {
-      const cx = GAME_CONFIG.gridOffsetX + pos.col * cellSize + GAME_CONFIG.gemSize / 2;
-      const cy = GAME_CONFIG.gridOffsetY + pos.row * cellSize + GAME_CONFIG.gemSize / 2;
-      splash.fillStyle(waterColor, 0.4);
-      splash.fillCircle(cx, cy, GAME_CONFIG.gemSize / 2 + 4);
-    }
-    scene.tweens.add({
-      targets: splash,
-      alpha: 0,
-      duration: 300,
-      onComplete: () => splash.destroy(),
-    });
-
-    await this.damageSystem.dealDamage(targets, damage, 'water');
-
-    return true;
   }
 }

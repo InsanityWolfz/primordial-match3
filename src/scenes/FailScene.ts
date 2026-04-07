@@ -39,8 +39,8 @@ export class FailScene extends Phaser.Scene {
       fontFamily: 'Arial',
     }).setOrigin(0.5, 0.5);
 
-    // Essence earned
-    this.add.text(cx, 350, `Essence Earned: ${this.runState.essence ?? 0}`, {
+    // Round reached
+    this.add.text(cx, 350, `Round Reached: ${this.runState.round}`, {
       fontSize: '24px',
       color: '#aaaaaa',
       fontFamily: 'Arial',

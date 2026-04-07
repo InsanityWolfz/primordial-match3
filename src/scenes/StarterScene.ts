@@ -3,13 +3,13 @@ import { GAME_CONFIG } from '../config/gameConfig.ts';
 import { getPowerUpDef } from '../config/powerUps.ts';
 import type { RunState } from '../types/RunState.ts';
 
-const STARTER_POOL = ['fireball', 'watergun', 'earthquake', 'gust', 'chainstrike'];
+const STARTER_POOL = ['fireball', 'icelance', 'earthquake', 'gust', 'chainstrike'];
 
 const DESCRIPTIONS: Record<string, string> = {
   fireball:    'Blast a target area,\ndamaging all tiles in range.',
-  watergun:    'Drench random targets\nacross the board.',
+  icelance:    'Strikes a random enemy —\nevery tile they occupy takes damage.',
   earthquake:  'Shuffle the board and\nstrike multiple targets.',
-  gust:        'Sweep entire rows,\nhitting everything in them.',
+  gust:        'Target a tile to nuke\nits entire row and column.',
   chainstrike: 'Chain lightning through\nmultiple targets in sequence.',
 };
 
@@ -66,12 +66,9 @@ export class StarterScene extends Phaser.Scene {
 
       this.createCard(x, cardY - cardH / 2, cardW, cardH, color, def.name, DESCRIPTIONS[id] ?? '', () => {
         const runState: RunState = {
-          essence: 0,
           round: 1,
-          ownedPowerUps: [{ powerUpId: id, level: 1, base: 0, multiplierPool: 0 }],
+          ownedPowerUps: [{ powerUpId: id, base: 0, multiplierPool: 0 }],
           ownedModifiers: [],
-          powerSlotCount: 4,
-          passiveSlotCount: 2,
         };
         this.scene.start('GameScene', runState);
       });

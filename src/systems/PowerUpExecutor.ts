@@ -99,13 +99,10 @@ export class PowerUpExecutor {
 
     switch (id) {
       case 'earthquake':
-        await this.earthExecutor.executeEarthquake(owned.level, computedDamage);
+        await this.earthExecutor.executeEarthquake(computedDamage);
         break;
-      case 'gust':
-        await this.airExecutor.executeGust(owned.level, computedDamage);
-        break;
-      case 'watergun':
-        await this.waterExecutor.executeWaterGun(owned.level, computedDamage);
+      case 'icelance':
+        await this.waterExecutor.executeIceLance(computedDamage);
         break;
     }
 
@@ -131,10 +128,13 @@ export class PowerUpExecutor {
 
     switch (id) {
       case 'fireball':
-        await this.fireExecutor.executeFireball(owned.level, row, col, computedDamage);
+        await this.fireExecutor.executeFireball(row, col, computedDamage);
         break;
       case 'chainstrike':
-        await this.lightningExecutor.executeChainStrike(owned.level, row, col, computedDamage);
+        await this.lightningExecutor.executeChainStrike(row, col, computedDamage);
+        break;
+      case 'gust':
+        await this.airExecutor.executeGust(row, col, computedDamage);
         break;
     }
 
@@ -156,13 +156,7 @@ export class PowerUpExecutor {
 
   // ──────────────── PASSIVE POWER TRIGGERS ────────────────
 
-  async executePostMatchPassives(matchPositions: { row: number; col: number }[] = []): Promise<void> {
-    if (await this.waterExecutor.executeSplashPassive()) this.onFlashCard('splash');
-    if (await this.airExecutor.executeWindslashPassive()) this.onFlashCard('windslash');
-    if (await this.lightningExecutor.executeCapacitorPassive(matchPositions)) this.onFlashCard('capacitor');
-  }
-
-  async executeSplashPassive(matchPositions: { row: number; col: number }[] = []): Promise<void> {
-    await this.executePostMatchPassives(matchPositions);
+  async executePostMatchPassives(_matchPositions: { row: number; col: number }[] = []): Promise<void> {
+    // No passive powers currently active — modifiers will add effects here
   }
 }

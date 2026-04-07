@@ -45,6 +45,31 @@ export class EnemyManager {
     return this.enemies;
   }
 
+  /**
+   * Returns a random living enemy whose grid bounds are adjacent (touching)
+   * to the source enemy. Returns null if none exists.
+   */
+  getAdjacentEnemy(source: Enemy): Enemy | null {
+    const candidates: Enemy[] = [];
+    for (const enemy of this.enemies) {
+      if (enemy === source || enemy.hp <= 0) continue;
+      const srcR2 = source.gridRow + source.heightInCells;
+      const srcC2 = source.gridCol + source.widthInCells;
+      const envR2 = enemy.gridRow + enemy.heightInCells;
+      const envC2 = enemy.gridCol + enemy.widthInCells;
+      // Overlap on one axis, adjacent (touching) on the other
+      const hOverlap = source.gridRow < envR2 && enemy.gridRow < srcR2;
+      const vOverlap = source.gridCol < envC2 && enemy.gridCol < srcC2;
+      const hTouching = srcC2 === enemy.gridCol || envC2 === source.gridCol;
+      const vTouching = srcR2 === enemy.gridRow || envR2 === source.gridRow;
+      if ((hTouching && hOverlap) || (vTouching && vOverlap)) {
+        candidates.push(enemy);
+      }
+    }
+    if (candidates.length === 0) return null;
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
   // ─── Placement ───
 
   placeEnemies(round: number): void {

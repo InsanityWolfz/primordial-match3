@@ -95,7 +95,6 @@ export class DamageSystem {
         if (hazardDestroyed) {
           result.hazardsDestroyed.push(pos);
           const p = pos;
-          const destroyedDef = hazard.def;
           hazardDestroyPromises.push(
             hazard.playDestroyAnimation(GAME_CONFIG.clearDuration).then(() => {
               this.ctx.hazardManager.clearPositions([p]);

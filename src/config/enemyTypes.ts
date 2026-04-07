@@ -108,6 +108,13 @@ export const ENEMY_TYPES: Record<string, EnemyTypeDef> = {
         intervalMin: 4,
         intervalMax: 5,
       },
+      {
+        id: 'shield',
+        label: 'shld',
+        tooltip: 'shields an adjacent enemy',
+        intervalMin: 5,
+        intervalMax: 7,
+      },
     ],
   },
 };

@@ -22,7 +22,7 @@ export const GAME_CONFIG = {
   // Gem types (primordial theme)
   gemTypes: [
     { id: 0, name: 'fire', color: 0xff4444 },
-    { id: 1, name: 'water', color: 0x4488ff },
+    { id: 1, name: 'ice', color: 0x88ddff },
     { id: 2, name: 'earth', color: 0x8b6914 },
     { id: 3, name: 'air', color: 0xe8e8e8 },
     { id: 4, name: 'lightning', color: 0xffdd00 },

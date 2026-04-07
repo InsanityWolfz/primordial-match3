@@ -597,12 +597,25 @@ export class GameScene extends Phaser.Scene implements GameContext {
           // Heal ~25% of max HP
           enemy.heal(Math.ceil(enemy.maxHp * 0.25));
           break;
-        case 'drainCharge':
-          // Stubbed — will drain base damage + multiplier in Phase 3
+        case 'drainCharge': {
+          const activePowers = this.ownedPowerUps.filter(p => {
+            const def = getPowerUpDef(p.powerUpId);
+            return def?.category === 'activePower' && p.base > 0;
+          });
+          if (activePowers.length > 0) {
+            const target = activePowers[Math.floor(Math.random() * activePowers.length)];
+            target.base = 0;
+            target.multiplierPool = 0;
+            this.hudManager.updateHudCharges();
+            this.hudManager.shakeCard(target.powerUpId);
+          }
           break;
-        case 'shield':
-          // Stubbed — Earth Giant not yet in round pool
+        }
+        case 'shield': {
+          const shieldTarget = this.enemyManager.getAdjacentEnemy(enemy) ?? enemy;
+          shieldTarget.applyShield();
           break;
+        }
       }
     }
   }

@@ -1,6 +1,5 @@
 // ─── Power-Up Registry Bootstrap ───
-// Re-exports the new config types and registers all element powers.
-// Existing code that imports from this file continues to work.
+// Re-exports the config types and registers all element powers.
 
 import {
   registerPowerUps,
@@ -11,16 +10,12 @@ import {
 export type {
   PowerCategory,
   PowerUpDefinition,
-  PowerUpLevelData,
 } from './powerUpConfig.ts';
 
 export {
   getAllPowerUps,
   getPowerUpsByElement,
   getPowerUpsByCategory,
-  POWER_COSTS_20,
-  PASSIVE_COSTS_5,
-  POWER_MILESTONES,
 } from './powerUpConfig.ts';
 
 // Register all element powers

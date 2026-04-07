@@ -18,25 +18,16 @@ export class FirePowerExecutor {
     this.passiveManager = passiveManager;
   }
 
-  private getParams(id: string, level: number): Record<string, number> {
-    const def = getPowerUpDef(id);
-    if (!def) return {};
-    const clampedLevel = Math.min(Math.max(level, 1), def.maxLevel);
-    return def.levels[clampedLevel - 1]?.params ?? {};
-  }
-
   /**
-   * Fireball: area blast around target.
-   * Hits gems (destroys them), enemy tiles (deals full damage to enemy), hazards (1 instance).
+   * Fireball: area blast around target tile.
+   * Radius comes from the power's flat params.
    */
-  async executeFireball(level: number, targetRow: number, targetCol: number, computedDamage: number): Promise<void> {
-    const params = this.getParams('fireball', level);
-    const r = params.radius ?? 1;
-    const damage = computedDamage;
+  async executeFireball(targetRow: number, targetCol: number, computedDamage: number): Promise<void> {
+    const params = getPowerUpDef('fireball')?.params ?? {};
+    const r = params.radius ?? 2;
 
-    this.passiveManager.onDamageDealt('fire', damage, 'fireball');
+    this.passiveManager.onDamageDealt('fire', computedDamage, 'fireball');
 
-    // Include ALL valid positions in AoE — gems AND enemy tiles
     const positions: { row: number; col: number }[] = [];
     for (let dr = -r; dr <= r; dr++) {
       for (let dc = -r; dc <= r; dc++) {
@@ -54,12 +45,11 @@ export class FirePowerExecutor {
     // Flash effect
     const scene = this.ctx.phaserScene;
     const flash = scene.add.graphics();
-    const gemType = GAME_CONFIG.gemTypes.find(g => g.name === 'fire');
-    const flashColor = gemType ? gemType.color : 0xff4444;
+    const fireColor = GAME_CONFIG.gemTypes.find(g => g.name === 'fire')?.color ?? 0xff4444;
     const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
     const cx = GAME_CONFIG.gridOffsetX + targetCol * cellSize + GAME_CONFIG.gemSize / 2;
     const cy = GAME_CONFIG.gridOffsetY + targetRow * cellSize + GAME_CONFIG.gemSize / 2;
-    flash.fillStyle(flashColor, 0.4);
+    flash.fillStyle(fireColor, 0.4);
     flash.fillCircle(cx, cy, (r + 0.5) * cellSize);
     scene.tweens.add({
       targets: flash,
@@ -68,14 +58,12 @@ export class FirePowerExecutor {
       onComplete: () => flash.destroy(),
     });
 
-    await this.damageSystem.dealDamage(positions, damage, 'fire');
-
+    await this.damageSystem.dealDamage(positions, computedDamage, 'fire');
     await this.cascadeSystem.applyGravityAndSpawn();
 
     const matches = this.ctx.findMatches();
     if (matches.length > 0) {
       await this.cascadeSystem.processCascade(matches, 1);
     }
-
   }
 }

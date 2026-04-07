@@ -3,7 +3,6 @@ import type { GameContext } from '../../types/GameContext.ts';
 import type { CascadeSystem } from '../CascadeSystem.ts';
 import type { DamageSystem } from '../DamageSystem.ts';
 import type { PassiveManager } from '../PassiveManager.ts';
-import { getPowerUpDef } from '../../config/powerUps.ts';
 
 export class AirPowerExecutor {
   private ctx: GameContext;
@@ -18,124 +17,68 @@ export class AirPowerExecutor {
     this.passiveManager = passiveManager;
   }
 
-  private getParams(id: string, level: number): Record<string, number> {
-    const def = getPowerUpDef(id);
-    if (!def) return {};
-    const clampedLevel = Math.min(Math.max(level, 1), def.maxLevel);
-    return def.levels[clampedLevel - 1]?.params ?? {};
-  }
-
-  private pickUniqueRandom(max: number, count: number): number[] {
-    const indices = Array.from({ length: max }, (_, i) => i);
-    for (let i = indices.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [indices[i], indices[j]] = [indices[j], indices[i]];
-    }
-    return indices.slice(0, count);
-  }
-
   /**
-   * Gust: clear random row(s) for damage.
-   * Non-targeted active power.
+   * Gust: hit every tile in the target's row AND column (cross/plus pattern).
+   * Targeted active power.
    */
-  async executeGust(level: number, computedDamage: number): Promise<void> {
-    const params = this.getParams('gust', level);
-    const rowCount = params.rowCount ?? 1;
-    const damage = computedDamage;
-
-    this.passiveManager.onDamageDealt('air', damage, 'gust');
+  async executeGust(targetRow: number, targetCol: number, computedDamage: number): Promise<void> {
+    this.passiveManager.onDamageDealt('air', computedDamage, 'gust');
 
     const positions: { row: number; col: number }[] = [];
     const posSet = new Set<string>();
 
-    const addRow = (row: number) => {
-      for (let c = 0; c < this.ctx.grid.cols; c++) {
-        const key = `${row},${c}`;
-        if (!posSet.has(key) && (this.ctx.grid.getGem(row, c) || this.ctx.grid.isEnemyTile(row, c))) {
-          posSet.add(key);
-          positions.push({ row, col: c });
-        }
+    const addTile = (r: number, c: number) => {
+      const key = `${r},${c}`;
+      if (!posSet.has(key) && (this.ctx.grid.getGem(r, c) || this.ctx.grid.isEnemyTile(r, c))) {
+        posSet.add(key);
+        positions.push({ row: r, col: c });
       }
     };
 
-    const rows = this.pickUniqueRandom(this.ctx.grid.rows, rowCount);
-    for (const r of rows) addRow(r);
+    // Full row
+    for (let c = 0; c < this.ctx.grid.cols; c++) addTile(targetRow, c);
+    // Full column
+    for (let r = 0; r < this.ctx.grid.rows; r++) addTile(r, targetCol);
 
-    // Flash effect
+    if (positions.length === 0) return;
+
+    // Cross flash effect
     const scene = this.ctx.phaserScene;
     const flash = scene.add.graphics();
     const airColor = GAME_CONFIG.gemTypes.find(g => g.name === 'air')?.color ?? 0xe8e8e8;
     flash.fillStyle(airColor, 0.3);
     const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
-    for (const pos of positions) {
-      const px = GAME_CONFIG.gridOffsetX + pos.col * cellSize;
-      const py = GAME_CONFIG.gridOffsetY + pos.row * cellSize;
-      flash.fillRect(px, py, GAME_CONFIG.gemSize, GAME_CONFIG.gemSize);
+
+    // Highlight full row
+    for (let c = 0; c < this.ctx.grid.cols; c++) {
+      flash.fillRect(
+        GAME_CONFIG.gridOffsetX + c * cellSize,
+        GAME_CONFIG.gridOffsetY + targetRow * cellSize,
+        GAME_CONFIG.gemSize, GAME_CONFIG.gemSize,
+      );
     }
+    // Highlight full column
+    for (let r = 0; r < this.ctx.grid.rows; r++) {
+      flash.fillRect(
+        GAME_CONFIG.gridOffsetX + targetCol * cellSize,
+        GAME_CONFIG.gridOffsetY + r * cellSize,
+        GAME_CONFIG.gemSize, GAME_CONFIG.gemSize,
+      );
+    }
+
     scene.tweens.add({
       targets: flash,
       alpha: 0,
-      duration: 300,
+      duration: 350,
       onComplete: () => flash.destroy(),
     });
 
-    await this.damageSystem.dealDamage(positions, damage, 'air');
-
+    await this.damageSystem.dealDamage(positions, computedDamage, 'air');
     await this.cascadeSystem.applyGravityAndSpawn();
 
     const matches = this.ctx.findMatches();
     if (matches.length > 0) {
       await this.cascadeSystem.processCascade(matches, 1);
     }
-
-  }
-
-  /**
-   * Windslash: passive power that triggers after match with a chance.
-   * Hits a random column for damage.
-   */
-  async executeWindslashPassive(): Promise<boolean> {
-    const windslashOwned = this.ctx.ownedPowerUps.find(p => p.powerUpId === 'windslash');
-    if (!windslashOwned) return false;
-
-    const params = this.getParams('windslash', windslashOwned.level);
-    const triggerChance = params.triggerChance ?? 10;
-    const damage = params.damage ?? 1;
-
-    // Roll for trigger
-    if (Math.random() * 100 >= triggerChance) return false;
-
-    // Pick random column
-    const col = Math.floor(Math.random() * this.ctx.grid.cols);
-    const positions: { row: number; col: number }[] = [];
-    for (let r = 0; r < this.ctx.grid.rows; r++) {
-      if (this.ctx.grid.getGem(r, col) || this.ctx.grid.isEnemyTile(r, col)) {
-        positions.push({ row: r, col });
-      }
-    }
-
-    if (positions.length === 0) return false;
-
-    // Slash visual
-    const scene = this.ctx.phaserScene;
-    const flash = scene.add.graphics();
-    const airColor = GAME_CONFIG.gemTypes.find(g => g.name === 'air')?.color ?? 0xe8e8e8;
-    flash.fillStyle(airColor, 0.4);
-    const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
-    for (const pos of positions) {
-      const px = GAME_CONFIG.gridOffsetX + pos.col * cellSize;
-      const py = GAME_CONFIG.gridOffsetY + pos.row * cellSize;
-      flash.fillRect(px, py, GAME_CONFIG.gemSize, GAME_CONFIG.gemSize);
-    }
-    scene.tweens.add({
-      targets: flash,
-      alpha: 0,
-      duration: 300,
-      onComplete: () => flash.destroy(),
-    });
-
-    await this.damageSystem.dealDamage(positions, damage, 'air');
-
-    return true;
   }
 }
