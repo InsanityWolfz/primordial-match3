@@ -125,8 +125,8 @@ export class Enemy {
     }
 
     // HP bar
-    const barH = 6;
-    const barY = this.worldY - barH - 3;
+    const barH = 9;
+    const barY = this.worldY - barH - 4;
     this.hpBarBg = scene.add.graphics();
     this.hpBarBg.setDepth(6);
     this.hpBarBg.fillStyle(0x222222, 0.9);
@@ -138,11 +138,11 @@ export class Enemy {
     const cx = this.worldX + this.worldW / 2;
     const cy = this.worldY + this.worldH / 2;
     this.hpText = scene.add.text(cx, cy, `${this.hp}/${this.maxHp}`, {
-      fontSize: '11px',
+      fontSize: '14px',
       fontFamily: 'monospace',
       color: '#ffffff',
       stroke: '#000000',
-      strokeThickness: 3,
+      strokeThickness: 4,
       align: 'center',
     });
     this.hpText.setOrigin(0.5, 0.5);
@@ -156,9 +156,9 @@ export class Enemy {
 
   // ──────────────── INTENT BADGES ────────────────
 
-  private badgeWidth = 46;
-  private badgeHeight = 18;
-  private badgeGap = 3;
+  private badgeWidth = 56;
+  private badgeHeight = 26;
+  private badgeGap = 4;
 
   /** Compute the center-x and bottom-y for a badge by index (0 = bottommost). */
   private badgePos(index: number): { cx: number; bottomY: number } {
@@ -181,11 +181,11 @@ export class Enemy {
 
     // Label text: "vine 3"
     const label = this.scene.add.text(cx, bottomY - bh / 2, `${def.label} ${countdown}`, {
-      fontSize: '10px',
+      fontSize: '13px',
       fontFamily: 'monospace',
       color: BADGE_TEXT[urg],
       stroke: '#000000',
-      strokeThickness: 2,
+      strokeThickness: 3,
       align: 'center',
     });
     label.setOrigin(0.5, 0.5);
@@ -194,11 +194,11 @@ export class Enemy {
     // Tooltip (hidden by default)
     const tooltipText = `${def.tooltip} in ${countdown} turn${countdown === 1 ? '' : 's'}`;
     const tooltip = this.scene.add.text(cx, bottomY - bh - 18, tooltipText, {
-      fontSize: '10px',
+      fontSize: '12px',
       fontFamily: 'monospace',
       color: '#ffffff',
       backgroundColor: '#000000cc',
-      padding: { x: 4, y: 3 },
+      padding: { x: 5, y: 4 },
       align: 'center',
     });
     tooltip.setOrigin(0.5, 1);
@@ -342,10 +342,10 @@ export class Enemy {
     }
 
     // Shift HP text up if trait badge is displayed
-    this.hpText.setY(cy - 9);
+    this.hpText.setY(cy - 11);
 
-    this.traitBadge = this.scene.add.text(cx, cy + 9, traitLabel, {
-      fontSize: '11px',
+    this.traitBadge = this.scene.add.text(cx, cy + 11, traitLabel, {
+      fontSize: '13px',
       fontFamily: 'monospace',
       color,
       stroke: '#000000',
@@ -452,8 +452,8 @@ export class Enemy {
   private drawHpBar(): void {
     this.hpBarFill.clear();
     const ratio = Math.max(0, this.hp / this.maxHp);
-    const barH = 6;
-    const barY = this.worldY - barH - 3;
+    const barH = 9;
+    const barY = this.worldY - barH - 4;
 
     let barColor = 0x44cc44;
     if (ratio <= 0.25) barColor = 0xcc4444;
