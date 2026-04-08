@@ -204,16 +204,45 @@ export class EnemyManager {
 
   /**
    * Called at end of each player turn.
-   * Handles trait regen, then ticks all enemy intents.
+   * Ticks status effects (burn, stun, freeze), trait regen, then enemy intents.
    * Returns the list of intents that fired this turn.
    */
-  processTurnEnd(): FiredIntent[] {
+  async processTurnEnd(): Promise<FiredIntent[]> {
     const fired: FiredIntent[] = [];
+    const burnKilled: Enemy[] = [];
 
-    for (const enemy of this.enemies) {
+    for (const enemy of [...this.enemies]) {
+      // Burn DoT
+      if (enemy.burnTurns > 0) {
+        const died = enemy.takeDamage(enemy.burnDamage, 'fire');
+        enemy.burnTurns--;
+        if (enemy.burnTurns <= 0) enemy.burnDamage = 0;
+        if (died) {
+          burnKilled.push(enemy);
+          continue;
+        }
+      }
+
       // Trait: regenerating heals 1 HP per turn
       if (enemy.trait === 'regenerating' && enemy.hp > 0) {
         enemy.heal(1);
+      }
+
+      // Stun: skip one intent tick
+      if (enemy.stunnedTurns > 0) {
+        enemy.stunnedTurns--;
+        continue;
+      }
+
+      // Freeze: intents can't tick
+      if (enemy.freezeTurns > 0) {
+        enemy.freezeTurns--;
+        continue;
+      }
+
+      // Chill counter (visual only — intents were already delayed on apply)
+      if (enemy.chillTurns > 0) {
+        enemy.chillTurns--;
       }
 
       // Intent ticking
@@ -221,6 +250,12 @@ export class EnemyManager {
       for (const intent of firedIntents) {
         fired.push({ enemy, intent });
       }
+    }
+
+    // Process burn kills (after iterating to avoid mutation during loop)
+    for (const enemy of burnKilled) {
+      await this.removeEnemy(enemy);
+      this.onEnemyDiedCb?.();
     }
 
     return fired;

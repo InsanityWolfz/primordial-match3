@@ -195,6 +195,56 @@ export class HazardManager {
     return destroyedPositions;
   }
 
+  /**
+   * Directly spawn a hazard of the given type at an exact grid position.
+   * No-ops if the cell is out of bounds, already has a hazard, is at the cap,
+   * or has no gem to attach to.
+   */
+  spawnHazardAt(row: number, col: number, hazardId: string): void {
+    if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) return;
+    if (this.hazardGrid[row][col]) return;
+    if (this.getRemainingCount() >= this.maxHazards) return;
+    const def = HAZARD_DEFINITIONS.find(d => d.id === hazardId);
+    if (!def) return;
+    const gem = this.grid.getGem(row, col);
+    if (!gem) return;
+    const hazard = new Hazard(this.scene, row, col, def);
+    this.hazardGrid[row][col] = hazard;
+    hazard.setGem(gem);
+  }
+
+  /** Destroy a hazard at position immediately (animation + grid clear), ignoring HP. */
+  async destroyHazardAt(row: number, col: number): Promise<void> {
+    const hazard = this.hazardGrid[row]?.[col];
+    if (!hazard) return;
+    await hazard.playDestroyAnimation(GAME_CONFIG.clearDuration);
+    this.hazardGrid[row][col] = null;
+  }
+
+  /** Destroy all hazards on the board immediately. */
+  async destroyAllHazards(): Promise<void> {
+    const promises: Promise<void>[] = [];
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        if (this.hazardGrid[r][c]) {
+          promises.push(this.destroyHazardAt(r, c));
+        }
+      }
+    }
+    await Promise.all(promises);
+  }
+
+  /** Return all positions that currently have a hazard. */
+  getAllHazardPositions(): { row: number; col: number }[] {
+    const positions: { row: number; col: number }[] = [];
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        if (this.hazardGrid[r][c]) positions.push({ row: r, col: c });
+      }
+    }
+    return positions;
+  }
+
   // ─── Gravity support ───
 
   applyGravity(gemMoves: { gem: { gridRow: number; gridCol: number }; fromRow: number; toRow: number; col: number }[]): void {

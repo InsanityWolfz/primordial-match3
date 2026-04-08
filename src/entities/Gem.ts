@@ -138,6 +138,11 @@ export class Gem {
     });
   }
 
+  changeType(newType: GemType): void {
+    this.type = newType;
+    this.sprite.setTexture(`gem-${newType.name}`);
+  }
+
   destroy(): void {
     this.sprite.destroy();
     if (this.selectionRing) {

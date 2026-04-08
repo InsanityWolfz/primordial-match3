@@ -24,6 +24,9 @@ export class PowerUpExecutor {
   private onActionComplete: () => void;
   private onFlashCard: (id: string) => void;
 
+  private lastConsumedBase = 0;
+  private lastConsumedMult = 0;
+
   private fireExecutor!: FirePowerExecutor;
   private waterExecutor!: WaterPowerExecutor;
   private airExecutor!: AirPowerExecutor;
@@ -64,14 +67,41 @@ export class PowerUpExecutor {
   /**
    * Compute and consume a power's accumulated damage.
    * Returns 0 (and does not consume) if base is 0.
+   * Pre-modifiers applied here: Glacial Wrath (icelance).
+   * Post-consume: Flash Fire preserves multiplierPool at streak 5+.
+   * Stores lastConsumedBase/Mult for executors that need them.
    */
   private consumePower(id: string): number {
     const owned = this.ctx.ownedPowerUps.find(p => p.powerUpId === id);
     if (!owned || owned.base <= 0) return 0;
 
+    // Glacial Wrath: add hazard count to icelance mult before computing damage
+    if (id === 'icelance' && this.ctx.ownedModifiers.includes('ice_glacial_wrath')) {
+      owned.multiplierPool += this.ctx.hazardManager.getRemainingCount();
+    }
+
+    this.lastConsumedBase = owned.base;
+    this.lastConsumedMult = owned.multiplierPool;
+
     const damage = Math.floor(owned.base * Math.max(1, owned.multiplierPool));
+    const savedMult = owned.multiplierPool;
     owned.base = 0;
     owned.multiplierPool = 0;
+
+    // Flash Fire: streak 5+ preserves multiplierPool on fireball
+    if (
+      id === 'fireball' &&
+      this.ctx.ownedModifiers.includes('fire_flash_fire') &&
+      this.ctx.fireStreakCount >= 5
+    ) {
+      owned.multiplierPool = savedMult;
+    }
+
+    // Jet Stream: retain 50% of Gust's cascade multiplier after firing instead of full reset
+    if (id === 'gust' && this.ctx.ownedModifiers.includes('air_jet_stream')) {
+      owned.multiplierPool = Math.floor(savedMult * 0.5);
+    }
+
     return damage;
   }
 
@@ -99,10 +129,10 @@ export class PowerUpExecutor {
 
     switch (id) {
       case 'earthquake':
-        await this.earthExecutor.executeEarthquake(computedDamage);
+        await this.earthExecutor.executeEarthquake(computedDamage, this.lastConsumedBase, this.lastConsumedMult);
         break;
       case 'icelance':
-        await this.waterExecutor.executeIceLance(computedDamage);
+        await this.waterExecutor.executeIceLance(computedDamage, this.lastConsumedMult);
         break;
     }
 

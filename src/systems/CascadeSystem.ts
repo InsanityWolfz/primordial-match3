@@ -17,6 +17,9 @@ export class CascadeSystem {
   private onGemsDestroyedCb?: (count: number) => void;
   private onPowerAccumulatedCb?: () => void;
 
+  // Cascade depth tracking (for Air modifiers: Eye of the Storm, Hurricane)
+  private cascadeMaxLevel = 0;
+
   constructor(ctx: GameContext, executePostMatchPassives: (matchPositions: { row: number; col: number }[]) => Promise<void>) {
     this.ctx = ctx;
     this.executePostMatchPassives = executePostMatchPassives;
@@ -48,7 +51,16 @@ export class CascadeSystem {
     this.onPowerAccumulatedCb = cb;
   }
 
+  resetCascadeCounter(): void {
+    this.cascadeMaxLevel = 0;
+  }
+
+  getLastCascadeDepth(): number {
+    return this.cascadeMaxLevel;
+  }
+
   async processCascade(matches: { row: number; col: number }[], cascadeLevel: number): Promise<void> {
+    this.cascadeMaxLevel = Math.max(this.cascadeMaxLevel, cascadeLevel);
     // Identify match groups for essence multiplier tracking and power accumulation
     const groups = this.ctx.grid.findMatchGroups(
       (r, c) => this.ctx.hazardManager.hasHazard(r, c),
@@ -62,12 +74,19 @@ export class CascadeSystem {
     // Accumulate base damage and multiplier pools for owned active powers
     this.accumulatePowerProgress(groups, cascadeLevel);
 
-    // Passive: match completed bonuses
+    // Ice Shards: 50% chance per ice match group to deal shard damage to a random enemy tile
     if (this.passiveManager) {
-      const matchElement = matches.length > 0
-        ? (this.ctx.grid.getGem(matches[0].row, matches[0].col)?.type.name ?? '')
-        : '';
-      this.passiveManager.onMatchCompleted(matchElement, matches.length);
+      const shardEnemies = this.ctx.enemyManager.getEnemies().filter(e => e.hp > 0);
+      if (shardEnemies.length > 0) {
+        for (const group of groups) {
+          if (group.element === 'ice' && this.passiveManager.shouldTriggerIceShards()) {
+            const target = shardEnemies[Math.floor(Math.random() * shardEnemies.length)];
+            const shardRow = target.gridRow + Math.floor(Math.random() * target.heightInCells);
+            const shardCol = target.gridCol + Math.floor(Math.random() * target.widthInCells);
+            await this.damageSystem.dealDamage([{ row: shardRow, col: shardCol }], group.size, 'ice');
+          }
+        }
+      }
     }
 
     // Destroy matched gems (DamageSystem handles animation + grid clearing)
@@ -119,45 +138,59 @@ export class CascadeSystem {
     if (activePowers.length === 0) return;
 
     for (const group of groups) {
-      // Base: +1 per gem in the match for the matching element's power
+      // Apply Match Memory: treat size-3 as size-4 for accumulation if modifier is owned
+      const effectiveSize = this.passiveManager
+        ? this.passiveManager.onMatchCompleted(group.element, group.size).effectiveSize
+        : group.size;
+
+      // Base: +1 per gem in the match for the matching element's power (Match Memory may increase effectiveSize)
       const matchingPower = activePowers.find(p => getPowerUpDef(p.powerUpId)?.element === group.element);
       if (matchingPower) {
-        matchingPower.base += group.size;
+        const baseGain = effectiveSize >= 5 ? 25 : effectiveSize >= 4 ? 15 : 10;
+        matchingPower.base += baseGain;
       }
 
-      // Multiplier triggers per element
+      // Multiplier triggers per element (use effectiveSize for triggers)
       for (const power of activePowers) {
         const element = getPowerUpDef(power.powerUpId)?.element;
         switch (element) {
           case 'fire':
             if (group.element === 'fire') {
-              if (group.size >= 5) power.multiplierPool += 3;
-              else if (group.size === 4) power.multiplierPool += 2;
+              if (effectiveSize >= 5) power.multiplierPool += 10;
+              else if (effectiveSize >= 4) power.multiplierPool += 4;
+              else power.multiplierPool += 1;
             }
             break;
-          case 'water':
-            if (group.element === 'water') {
-              const adjacentToThreat = group.positions.some(p => this.isAdjacentToThreat(p.row, p.col));
-              if (adjacentToThreat) power.multiplierPool += 1.5;
-            }
+          case 'ice': {
+            // Any element matched adjacent to an enemy or hazard charges Ice Lance
+            const adjacentToThreat = group.positions.some(p => this.isAdjacentToThreat(p.row, p.col));
+            if (adjacentToThreat) power.multiplierPool += 1.5;
             break;
+          }
           case 'earth':
             // Any match-4+ of any element
-            if (group.size >= 4) power.multiplierPool += 2;
+            if (effectiveSize >= 4) power.multiplierPool += 2;
             break;
           // Air and Lightning handled separately below / in GameScene
         }
       }
     }
 
-    // Air: +1.5 multiplier per cascade level (every call to processCascade)
-    const airPower = activePowers.find(p => getPowerUpDef(p.powerUpId)?.element === 'air');
-    if (airPower) {
-      airPower.multiplierPool += 1.5;
+    // Air: cascade multiplier — only rewards actual cascades (2nd match onward in a turn)
+    if (cascadeLevel >= 1) {
+      const airPower = activePowers.find(p => getPowerUpDef(p.powerUpId)?.element === 'air');
+      if (airPower) {
+        const bonus = this.passiveManager ? this.passiveManager.getAirCascadeBonus() : 1.5;
+        airPower.multiplierPool += bonus;
+      }
+    }
+
+    // Clamp all multiplierPools to 1 decimal place (prevents float drift from 1.2/1.5 increments)
+    for (const p of activePowers) {
+      p.multiplierPool = Math.round(p.multiplierPool * 10) / 10;
     }
 
     // Notify HUD of updated values in real time
-    void cascadeLevel;
     this.onPowerAccumulatedCb?.();
   }
 

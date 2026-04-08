@@ -35,6 +35,15 @@ export class GameScene extends Phaser.Scene implements GameContext {
   // Round modifier effect state
   private activeModifierId: string | null = null;
 
+  // Per-round modifier runtime state (public so power executors can read/write via GameContext)
+  fireStreakCount = 0;
+  hadFireMatchThisTurn = false;
+  private fireStreakMissedTurns = 0;  // for Heat Retention grace period
+  earthquakeFiredThisTurn = false;
+  empFiredThisRound = false;  // for EMP (first Chain Strike cancels all intents)
+  novaFiredThisRound = false; // for Nova (once per round)
+  private bedrockUsedThisRound = false;
+
   // Systems
   private cascadeSystem!: CascadeSystem;
   private damageSystem!: DamageSystem;
@@ -182,12 +191,20 @@ export class GameScene extends Phaser.Scene implements GameContext {
     this.roundEnemiesKilled = 0;
     this.roundHazardsCleared = 0;
     this.roundPowerUses = {};
+    this.fireStreakCount = 0;
+    this.hadFireMatchThisTurn = false;
+    this.fireStreakMissedTurns = 0;
+    this.earthquakeFiredThisTurn = false;
+    this.empFiredThisRound = false;
+    this.novaFiredThisRound = false;
+    this.bedrockUsedThisRound = false;
   }
 
   private initializeSystems(): void {
     this.enemyManager = new EnemyManager(this, this.grid);
     this.enemyManager.setOnEnemyDied(() => {
       this.roundEnemiesKilled++;
+      this.passiveManager?.onEnemyKilled();
       this.updateEnemyDisplay();
       this.updateShopButton();
     });
@@ -237,12 +254,18 @@ export class GameScene extends Phaser.Scene implements GameContext {
     this.cascadeSystem.setOnPowerAccumulated(() => {
       this.hudManager.updateHudCharges();
     });
+    this.cascadeSystem.setOnMatchGroup((element, _size) => {
+      if (element === 'fire') this.hadFireMatchThisTurn = true;
+    });
     this.damageSystem.setOnHazardsDestroyed((count) => {
       this.roundHazardsCleared += count;
     });
 
     this.powerUpExecutor.initExecutors(this.cascadeSystem, this.damageSystem, this.passiveManager);
     this.cascadeSystem.setPassiveManager(this.passiveManager);
+
+    // Apply round-start modifier bonuses (Kindling, Headstart, Synergy, etc.)
+    this.passiveManager.onRoundStart();
 
     const cellSize = GAME_CONFIG.gemSize + GAME_CONFIG.gemPadding;
     const barY = GAME_CONFIG.gridOffsetY + GAME_CONFIG.gridRows * cellSize + 8;
@@ -556,9 +579,46 @@ export class GameScene extends Phaser.Scene implements GameContext {
 
     await this.cascadeSystem.processCascade(matches, 1);
 
-    const firedIntents = this.enemyManager.processTurnEnd();
+    // Fire streak update
+    if (this.hadFireMatchThisTurn) {
+      this.fireStreakCount++;
+      this.fireStreakMissedTurns = 0;
+    } else if (this.ownedModifiers.includes('fire_heat_retention') && this.fireStreakMissedTurns < 1) {
+      this.fireStreakMissedTurns++;
+      // streak preserved by grace period
+    } else if (this.ownedModifiers.includes('fire_wildfire') && this.fireStreakCount > 0) {
+      this.fireStreakCount = Math.max(1, this.fireStreakCount - 1);
+      this.fireStreakMissedTurns = 0;
+    } else {
+      this.fireStreakCount = 0;
+      this.fireStreakMissedTurns = 0;
+    }
+    this.hadFireMatchThisTurn = false;
+
+    // Earth patience: +1 (or +2 with Patient Earth) per turn without firing earthquake
+    if (!this.earthquakeFiredThisTurn) {
+      const eq = this.ownedPowerUps.find(p => p.powerUpId === 'earthquake');
+      if (eq) {
+        const gain = this.ownedModifiers.includes('earth_patient_earth') ? 2 : 1;
+        eq.multiplierPool += gain;
+      }
+    }
+    this.earthquakeFiredThisTurn = false;
+
+
+    const firedIntents = await this.enemyManager.processTurnEnd();
     await this.processEnemyIntents(firedIntents);
     await this.hazardManager.processTurnEnd();
+
+    // Bedrock: if last turn and earthquake has 10+ mult, grant 5 more turns (once per round)
+    if (this.turnsRemaining <= 0 && !this.bedrockUsedThisRound && this.ownedModifiers.includes('earth_bedrock')) {
+      const eq = this.ownedPowerUps.find(p => p.powerUpId === 'earthquake');
+      if (eq && Math.max(1, eq.multiplierPool) >= 10) {
+        this.turnsRemaining = 5;
+        this.bedrockUsedThisRound = true;
+        this.updateTurnsDisplay();
+      }
+    }
 
     this.hudManager.updateHudCharges();
     this.updateEnemyDisplay();
@@ -573,7 +633,7 @@ export class GameScene extends Phaser.Scene implements GameContext {
 
   /**
    * Route fired enemy intents to their effects.
-   * Called after each player turn. Intents that have no implementation yet are silently skipped.
+   * Handles: shock (halve effect), discharge (backfire), faraday shield (block heal/shield).
    */
   private async processEnemyIntents(firedIntents: FiredIntent[]): Promise<void> {
     if (firedIntents.length > 0) {
@@ -583,20 +643,39 @@ export class GameScene extends Phaser.Scene implements GameContext {
     }
 
     for (const { enemy, intent } of firedIntents) {
+      // Faraday Shield: block the first heal or shield intent
+      if (this.passiveManager.shouldBlockIntentForFaraday(intent.id)) {
+        this.hudManager.updateHudCharges();
+        continue;
+      }
+
+      // Discharge: backfire this intent
+      if (enemy.discharged) {
+        enemy.discharged = false;
+        await this.processDischargedIntent(enemy, intent.id);
+        continue;
+      }
+
+      // Shock: halve effect (round down); clear shock after use
+      const shocked = enemy.shocked;
+      if (shocked) enemy.shocked = false;
+
       switch (intent.id) {
         case 'spawnIce':
-          this.hazardManager.spawnHazardNearEnemy(enemy, 'ice');
-          break;
         case 'spawnStone':
-          this.hazardManager.spawnHazardNearEnemy(enemy, 'stone');
+        case 'spreadVines': {
+          if (shocked) break; // floor(1 × 0.5) = 0, skip spawn
+          const typeMap: Record<string, string> = { spawnIce: 'ice', spawnStone: 'stone', spreadVines: 'thornVine' };
+          this.hazardManager.spawnHazardNearEnemy(enemy, typeMap[intent.id]);
           break;
-        case 'spreadVines':
-          this.hazardManager.spawnHazardNearEnemy(enemy, 'thornVine');
+        }
+        case 'regenerate': {
+          const healAmt = shocked
+            ? Math.floor(enemy.maxHp * 0.125) // 50% of normal 25%
+            : Math.ceil(enemy.maxHp * 0.25);
+          enemy.heal(healAmt);
           break;
-        case 'regenerate':
-          // Heal ~25% of max HP
-          enemy.heal(Math.ceil(enemy.maxHp * 0.25));
-          break;
+        }
         case 'drainCharge': {
           const activePowers = this.ownedPowerUps.filter(p => {
             const def = getPowerUpDef(p.powerUpId);
@@ -604,19 +683,55 @@ export class GameScene extends Phaser.Scene implements GameContext {
           });
           if (activePowers.length > 0) {
             const target = activePowers[Math.floor(Math.random() * activePowers.length)];
-            target.base = 0;
-            target.multiplierPool = 0;
+            if (shocked) {
+              // Halve drain: remove 50% of base only
+              target.base = Math.floor(target.base * 0.5);
+            } else {
+              target.base = 0;
+              target.multiplierPool = 0;
+            }
             this.hudManager.updateHudCharges();
             this.hudManager.shakeCard(target.powerUpId);
           }
           break;
         }
         case 'shield': {
+          if (shocked) break; // shock cancels shield intent
           const shieldTarget = this.enemyManager.getAdjacentEnemy(enemy) ?? enemy;
           shieldTarget.applyShield();
           break;
         }
       }
+    }
+  }
+
+  /** Backfire a discharged enemy's intent (spawn→destroy hazard, heal→damage self). */
+  private async processDischargedIntent(enemy: import('../entities/Enemy.ts').Enemy, intentId: string): Promise<void> {
+    switch (intentId) {
+      case 'spawnIce':
+      case 'spawnStone':
+      case 'spreadVines': {
+        // Destroy a random existing hazard
+        const hazardPositions: { row: number; col: number }[] = [];
+        for (let r = 0; r < this.grid.rows; r++) {
+          for (let c = 0; c < this.grid.cols; c++) {
+            if (this.hazardManager.hasHazard(r, c)) hazardPositions.push({ row: r, col: c });
+          }
+        }
+        if (hazardPositions.length > 0) {
+          const pos = hazardPositions[Math.floor(Math.random() * hazardPositions.length)];
+          await this.hazardManager.destroyHazardAt(pos.row, pos.col);
+        }
+        break;
+      }
+      case 'regenerate': {
+        // Heal intent backfires: deal 25% maxHP damage to the enemy instead
+        const dmg = Math.ceil(enemy.maxHp * 0.25);
+        await this.enemyManager.damageEnemy(enemy, dmg, null);
+        break;
+      }
+      default:
+        break;
     }
   }
 

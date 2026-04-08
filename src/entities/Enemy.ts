@@ -59,6 +59,15 @@ export class Enemy {
   wardedElement?: string;
   shieldActive = false;
 
+  // Status effects
+  burnDamage = 0;       // damage per turn (0 = not burning)
+  burnTurns = 0;        // turns of burn remaining
+  chillTurns = 0;       // turns of chill remaining (visual only; intents already delayed on apply)
+  freezeTurns = 0;      // turns of freeze remaining (intents can't tick while > 0)
+  stunnedTurns = 0;     // turns of stun remaining (intents skip a tick)
+  shocked = false;      // next intent effect is halved
+  discharged = false;   // next intent backfires (lightning Discharge modifier)
+
   private scene: Phaser.Scene;
   private body: Phaser.GameObjects.Graphics;
   private spriteImage?: Phaser.GameObjects.Image;
@@ -251,6 +260,55 @@ export class Enemy {
       this.redrawBadge(inst, i);
     }
     return fired;
+  }
+
+  // ──────────────── STATUS EFFECTS ────────────────
+
+  applyBurn(damagePerTurn: number, turns: number): void {
+    // Stack: take the higher damage, extend duration
+    this.burnDamage = Math.max(this.burnDamage, damagePerTurn);
+    this.burnTurns = Math.max(this.burnTurns, turns);
+  }
+
+  /** Delay all intent countdowns by `turns`. Used for Chill and Freeze. */
+  delayIntents(turns: number): void {
+    for (const inst of this.intentInstances) {
+      inst.countdown += turns;
+    }
+    // Redraw badges after delay
+    for (let i = 0; i < this.intentInstances.length; i++) {
+      this.redrawBadge(this.intentInstances[i], i);
+    }
+  }
+
+  /** Speed up all intent countdowns by 1 (minimum 1). Used for Haste. */
+  hasteIntents(): void {
+    for (const inst of this.intentInstances) {
+      inst.countdown = Math.max(1, inst.countdown - 1);
+    }
+    for (let i = 0; i < this.intentInstances.length; i++) {
+      this.redrawBadge(this.intentInstances[i], i);
+    }
+  }
+
+  /** Cancel all active intents (reset to max interval). Used for EMP. */
+  cancelAllIntents(): void {
+    for (const inst of this.intentInstances) {
+      inst.countdown = inst.def.intervalMax;
+    }
+    for (let i = 0; i < this.intentInstances.length; i++) {
+      this.redrawBadge(this.intentInstances[i], i);
+    }
+  }
+
+  /** Strip the shield without absorbing a hit (used by lightning Conductor modifier). */
+  stripShield(): void {
+    this.clearShield();
+  }
+
+  /** Returns the number of distinct intents this enemy has (used by Overload modifier). */
+  getIntentCount(): number {
+    return this.intentInstances.length;
   }
 
   // ──────────────── TRAIT ────────────────

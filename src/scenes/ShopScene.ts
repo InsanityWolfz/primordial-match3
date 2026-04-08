@@ -4,17 +4,34 @@ import type { RunState, OwnedPowerUp } from '../types/RunState.ts';
 import { POWER_UPS, getPowerUpDef } from '../config/powerUps.ts';
 import type { PowerUpDefinition } from '../config/powerUps.ts';
 import { rollModifier } from '../config/roundModifiers.ts';
+import {
+  getAllModifiers,
+  getModifierDef,
+  RARITY_WEIGHT,
+  POWER_SHOP_WEIGHT,
+} from '../config/modifierConfig.ts';
+import type { ModifierDef } from '../config/modifierConfig.ts';
+
+type OfferType = 'power' | 'modifier';
+
+const RARITY_COLORS: Record<string, number> = {
+  Common:    0xaaaaaa,
+  Uncommon:  0x44cc44,
+  Rare:      0x4488ff,
+  Epic:      0xcc44ff,
+  Legendary: 0xffaa00,
+};
 
 export class ShopScene extends Phaser.Scene {
   private runState!: RunState;
 
-  // Discover section state
   private offerIds: string[] = [];
+  private offerTypes: OfferType[] = [];
   private choiceMade = false;
-  private chosenId: string | null = null; // null = skipped
+  private chosenId: string | null = null;
+  private chosenType: OfferType | null = null;
   private rerollUsed = false;
 
-  // Managed game objects
   private discoverObjects: Phaser.GameObjects.GameObject[] = [];
   private ownedObjects: Phaser.GameObjects.GameObject[] = [];
   private nextRoundObjects: Phaser.GameObjects.GameObject[] = [];
@@ -31,9 +48,9 @@ export class ShopScene extends Phaser.Scene {
     };
     this.choiceMade = false;
     this.chosenId = null;
+    this.chosenType = null;
     this.rerollUsed = false;
 
-    // Roll modifier for the next round
     const rolledMod = rollModifier(this.runState.round);
     this.runState.currentModifier = rolledMod
       ? { id: rolledMod.id, name: rolledMod.name, description: rolledMod.description }
@@ -45,14 +62,68 @@ export class ShopScene extends Phaser.Scene {
     this.drawAll();
   }
 
-  // ── SETUP ────────────────────────────────────────────────────────────────────
+  // ── OFFER ROLLING ────────────────────────────────────────────────────────────
 
   private rollOffers(): void {
-    const owned = new Set(this.runState.ownedPowerUps.map(p => p.powerUpId));
-    const available = POWER_UPS.filter(def => !owned.has(def.id));
-    this.shuffle(available);
-    this.offerIds = available.slice(0, 3).map(d => d.id);
+    const ownedPowerIds = new Set(this.runState.ownedPowerUps.map(p => p.powerUpId));
+    const ownedModifierIds = new Set(this.runState.ownedModifiers);
+
+    // Powers not yet owned
+    const availablePowers = POWER_UPS.filter(p => !ownedPowerIds.has(p.id));
+
+    // Modifiers not yet owned, filtered by element ownership
+    const availableModifiers = getAllModifiers().filter(m => {
+      if (ownedModifierIds.has(m.id)) return false;
+      if (m.element === 'neutral') return true;
+      return ownedPowerIds.has(m.powerUpId);
+    });
+
+    type Entry = { type: OfferType; id: string; weight: number };
+    const pool: Entry[] = [
+      ...availablePowers.map(p => ({ type: 'power' as const, id: p.id, weight: POWER_SHOP_WEIGHT })),
+      ...availableModifiers.map(m => ({ type: 'modifier' as const, id: m.id, weight: RARITY_WEIGHT[m.rarity] })),
+    ];
+
+    if (pool.length === 0) {
+      this.offerIds = [];
+      this.offerTypes = [];
+      return;
+    }
+
+    const pickedIds: string[] = [];
+    const pickedTypes: OfferType[] = [];
+    let powersSelected = 0;
+    const remaining = [...pool];
+
+    for (let i = 0; i < 3 && remaining.length > 0; i++) {
+      // At most 1 power per 3 offerings
+      const candidates = powersSelected >= 1
+        ? remaining.filter(e => e.type === 'modifier')
+        : remaining;
+
+      if (candidates.length === 0) break;
+
+      const totalWeight = candidates.reduce((s, e) => s + e.weight, 0);
+      let roll = Math.random() * totalWeight;
+      let chosen = candidates[candidates.length - 1];
+      for (const entry of candidates) {
+        roll -= entry.weight;
+        if (roll <= 0) { chosen = entry; break; }
+      }
+
+      pickedIds.push(chosen.id);
+      pickedTypes.push(chosen.type);
+      if (chosen.type === 'power') powersSelected++;
+
+      const idx = remaining.findIndex(e => e.id === chosen.id);
+      if (idx >= 0) remaining.splice(idx, 1);
+    }
+
+    this.offerIds = pickedIds;
+    this.offerTypes = pickedTypes;
   }
+
+  // ── LAYOUT ───────────────────────────────────────────────────────────────────
 
   private drawBackground(): void {
     const bg = this.add.graphics();
@@ -86,8 +157,6 @@ export class ShopScene extends Phaser.Scene {
     }).setOrigin(0.5, 0).setDepth(11);
   }
 
-  // ── LAYOUT ───────────────────────────────────────────────────────────────────
-
   private drawAll(): void {
     let curY = 90;
     const discoverH = this.drawDiscoverSection(curY);
@@ -105,16 +174,24 @@ export class ShopScene extends Phaser.Scene {
 
     let curY = startY;
     const headerH = this.drawSectionHeader(
-      this.discoverObjects, curY, 'CHOOSE A POWER', 'pick 1 — free', 0xffaa44,
+      this.discoverObjects, curY, 'CHOOSE AN UPGRADE', 'pick 1 — free', 0xffaa44,
     );
     curY += headerH + 8;
     let totalH = headerH + 8;
 
     if (this.choiceMade) {
-      const msg = this.chosenId
-        ? `✓  ${getPowerUpDef(this.chosenId)?.name ?? this.chosenId} added to your powers`
-        : '✗  Skipped — no power taken';
-      const msgColor = this.chosenId ? '#44ff88' : '#666677';
+      let msg: string;
+      let msgColor: string;
+      if (this.chosenId && this.chosenType === 'power') {
+        msg = `✓  ${getPowerUpDef(this.chosenId)?.name ?? this.chosenId} added to your powers`;
+        msgColor = '#44ff88';
+      } else if (this.chosenId && this.chosenType === 'modifier') {
+        msg = `✓  ${getModifierDef(this.chosenId)?.name ?? this.chosenId} modifier unlocked`;
+        msgColor = '#44ff88';
+      } else {
+        msg = '✗  Skipped — nothing taken';
+        msgColor = '#666677';
+      }
       this.discoverObjects.push(
         this.add.text(GAME_CONFIG.width / 2, curY + 18, msg, {
           fontSize: '14px', color: msgColor, fontFamily: 'Arial', fontStyle: 'bold',
@@ -124,34 +201,35 @@ export class ShopScene extends Phaser.Scene {
       return totalH;
     }
 
-    // 3 horizontal offer cards
     const cardW = 200;
-    const cardH = 180;
+    const cardH = 190;
     const gap = 10;
     const totalCardsW = 3 * cardW + 2 * gap;
     const startX = (GAME_CONFIG.width - totalCardsW) / 2;
 
     for (let i = 0; i < this.offerIds.length; i++) {
-      const def = getPowerUpDef(this.offerIds[i]);
-      if (!def) continue;
-      this.drawOfferCard(startX + i * (cardW + gap), curY, cardW, cardH, def);
+      const id = this.offerIds[i];
+      const type = this.offerTypes[i];
+      if (type === 'power') {
+        const def = getPowerUpDef(id);
+        if (def) this.drawPowerCard(startX + i * (cardW + gap), curY, cardW, cardH, def);
+      } else {
+        const def = getModifierDef(id);
+        if (def) this.drawModifierCard(startX + i * (cardW + gap), curY, cardW, cardH, def);
+      }
     }
 
     totalH += cardH + 8;
     curY += cardH + 8;
-
-    // Reroll button
     const rerollH = this.drawRerollButton(curY);
     totalH += rerollH;
     curY += rerollH;
-
-    // Skip button
     totalH += this.drawSkipButton(curY);
 
     return totalH;
   }
 
-  private drawOfferCard(x: number, y: number, w: number, h: number, def: PowerUpDefinition): void {
+  private drawPowerCard(x: number, y: number, w: number, h: number, def: PowerUpDefinition): void {
     const gemType = GAME_CONFIG.gemTypes.find(g => g.name === def.element);
     const color = gemType?.color ?? 0x888888;
     const hexColor = '#' + color.toString(16).padStart(6, '0');
@@ -163,6 +241,13 @@ export class ShopScene extends Phaser.Scene {
     bg.strokeRoundedRect(x, y, w, h, 10);
     this.discoverObjects.push(bg);
 
+    // "POWER" type tag at top-left
+    this.discoverObjects.push(
+      this.add.text(x + 8, y + 8, 'POWER', {
+        fontSize: '9px', color: '#888899', fontFamily: 'Arial', fontStyle: 'bold',
+      }).setOrigin(0, 0),
+    );
+
     // Element tag (top-right)
     this.discoverObjects.push(
       this.add.text(x + w - 8, y + 8, def.element.toUpperCase(), {
@@ -170,24 +255,81 @@ export class ShopScene extends Phaser.Scene {
       }).setOrigin(1, 0),
     );
 
-    // Power name
     this.discoverObjects.push(
-      this.add.text(x + w / 2, y + 34, def.name, {
+      this.add.text(x + w / 2, y + 38, def.name, {
+        fontSize: '17px', color: '#ffffff', fontFamily: 'Arial', fontStyle: 'bold',
+        align: 'center', wordWrap: { width: w - 16 },
+      }).setOrigin(0.5, 0.5),
+    );
+
+    this.discoverObjects.push(
+      this.add.text(x + w / 2, y + 64, def.description, {
+        fontSize: '11px', color: '#aaaacc', fontFamily: 'Arial',
+        align: 'center', wordWrap: { width: w - 16 },
+      }).setOrigin(0.5, 0),
+    );
+
+    this.addTakeButton(x, y, w, h, color, hexColor, () => this.takeOffer(def.id, 'power'));
+  }
+
+  private drawModifierCard(x: number, y: number, w: number, h: number, def: ModifierDef): void {
+    const rarityColor = RARITY_COLORS[def.rarity] ?? 0xaaaaaa;
+    const rarityHex = '#' + rarityColor.toString(16).padStart(6, '0');
+
+    // Element color accent (or rarity color for neutral)
+    const gemType = GAME_CONFIG.gemTypes.find(g => g.name === def.element);
+    const accentColor = gemType?.color ?? rarityColor;
+    const accentHex = '#' + accentColor.toString(16).padStart(6, '0');
+
+    const bg = this.add.graphics();
+    bg.fillStyle(accentColor, 0.06);
+    bg.fillRoundedRect(x, y, w, h, 10);
+    bg.lineStyle(1.5, accentColor, 0.4);
+    bg.strokeRoundedRect(x, y, w, h, 10);
+    // Rarity glow strip at top
+    bg.fillStyle(rarityColor, 0.6);
+    bg.fillRoundedRect(x, y, w, 3, { tl: 10, tr: 10, bl: 0, br: 0 });
+    this.discoverObjects.push(bg);
+
+    // Rarity label (top-left)
+    this.discoverObjects.push(
+      this.add.text(x + 8, y + 10, def.rarity.toUpperCase(), {
+        fontSize: '9px', color: rarityHex, fontFamily: 'Arial', fontStyle: 'bold',
+      }).setOrigin(0, 0),
+    );
+
+    // Element tag (top-right)
+    const elementLabel = def.element === 'neutral' ? 'NEUTRAL' : def.element.toUpperCase();
+    this.discoverObjects.push(
+      this.add.text(x + w - 8, y + 10, elementLabel, {
+        fontSize: '9px', color: accentHex, fontFamily: 'Arial', fontStyle: 'bold',
+      }).setOrigin(1, 0),
+    );
+
+    // Modifier name
+    this.discoverObjects.push(
+      this.add.text(x + w / 2, y + 38, def.name, {
         fontSize: '17px', color: '#ffffff', fontFamily: 'Arial', fontStyle: 'bold',
         align: 'center', wordWrap: { width: w - 16 },
       }).setOrigin(0.5, 0.5),
     );
 
     // Description
-    const desc = def.description;
     this.discoverObjects.push(
-      this.add.text(x + w / 2, y + 62, desc, {
+      this.add.text(x + w / 2, y + 64, def.description, {
         fontSize: '11px', color: '#aaaacc', fontFamily: 'Arial',
         align: 'center', wordWrap: { width: w - 16 },
       }).setOrigin(0.5, 0),
     );
 
-    // TAKE button
+    this.addTakeButton(x, y, w, h, accentColor, accentHex, () => this.takeOffer(def.id, 'modifier'));
+  }
+
+  private addTakeButton(
+    x: number, y: number, w: number, h: number,
+    color: number, hexColor: string,
+    onTake: () => void,
+  ): void {
     const btnH = 30;
     const btnY = y + h - btnH - 8;
     const btnX = x + 8;
@@ -213,13 +355,11 @@ export class ShopScene extends Phaser.Scene {
     const hitZone = this.add.zone(btnX + btnW / 2, btnY + btnH / 2, btnW, btnH)
       .setInteractive({ useHandCursor: true });
     this.discoverObjects.push(hitZone);
-
     hitZone.on('pointerover', () => drawBtn(true));
     hitZone.on('pointerout', () => drawBtn(false));
-    hitZone.on('pointerdown', () => this.takePower(def.id));
+    hitZone.on('pointerdown', onTake);
   }
 
-  /** Returns height consumed. */
   private drawRerollButton(y: number): number {
     const cx = GAME_CONFIG.width / 2;
     const btnW = 220;
@@ -262,7 +402,6 @@ export class ShopScene extends Phaser.Scene {
     return btnH + 6;
   }
 
-  /** Returns height consumed. */
   private drawSkipButton(y: number): number {
     const cx = GAME_CONFIG.width / 2;
     const btnW = 180;
@@ -296,7 +435,7 @@ export class ShopScene extends Phaser.Scene {
     return btnH + 6;
   }
 
-  // ── OWNED POWERS SECTION ─────────────────────────────────────────────────────
+  // ── OWNED SECTION ────────────────────────────────────────────────────────────
 
   private drawOwnedSection(startY: number): number {
     this.destroyGroup(this.ownedObjects);
@@ -363,16 +502,14 @@ export class ShopScene extends Phaser.Scene {
       fontSize: '13px', color: hexColor, fontFamily: 'Arial', fontStyle: 'bold',
     }));
 
-    this.ownedObjects.push(this.add.text(x + 10, y + 28, def.category === 'activePower' ? 'ACTIVE' : 'PASSIVE', {
+    this.ownedObjects.push(this.add.text(x + 10, y + 28, 'ACTIVE', {
       fontSize: '11px', color: '#888899', fontFamily: 'Arial',
     }));
 
-    if (def.category === 'activePower') {
-      const mult = Math.max(1, entry.multiplierPool);
-      this.ownedObjects.push(this.add.text(x + w - 8, y + 28, `${entry.base} × ${mult}`, {
-        fontSize: '10px', color: '#666677', fontFamily: 'Arial',
-      }).setOrigin(1, 0));
-    }
+    const mult = Math.max(1, entry.multiplierPool);
+    this.ownedObjects.push(this.add.text(x + w - 8, y + 28, `${entry.base} × ${mult}`, {
+      fontSize: '10px', color: '#666677', fontFamily: 'Arial',
+    }).setOrigin(1, 0));
   }
 
   // ── NEXT ROUND BUTTON ────────────────────────────────────────────────────────
@@ -429,7 +566,6 @@ export class ShopScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
     hitArea.setDepth(72);
     this.nextRoundObjects.push(hitArea);
-
     hitArea.on('pointerover', () => drawBg(true));
     hitArea.on('pointerout', () => drawBg(false));
     hitArea.on('pointerdown', () => this.startNextRound());
@@ -475,17 +611,25 @@ export class ShopScene extends Phaser.Scene {
 
   // ── ACTIONS ──────────────────────────────────────────────────────────────────
 
-  private takePower(powerUpId: string): void {
+  private takeOffer(id: string, type: OfferType): void {
     if (this.choiceMade) return;
-    this.chosenId = powerUpId;
+    this.chosenId = id;
+    this.chosenType = type;
     this.choiceMade = true;
-    this.runState.ownedPowerUps.push({ powerUpId, base: 0, multiplierPool: 0 });
+
+    if (type === 'power') {
+      this.runState.ownedPowerUps.push({ powerUpId: id, base: 0, multiplierPool: 0 });
+    } else {
+      this.runState.ownedModifiers.push(id);
+    }
+
     this.refreshAll();
   }
 
   private skipChoice(): void {
     if (this.choiceMade) return;
     this.chosenId = null;
+    this.chosenType = null;
     this.choiceMade = true;
     this.refreshAll();
   }
@@ -524,16 +668,7 @@ export class ShopScene extends Phaser.Scene {
     this.drawAll();
   }
 
-  // ── HELPERS ──────────────────────────────────────────────────────────────────
-
   private destroyGroup(objects: Phaser.GameObjects.GameObject[]): void {
     for (const obj of objects) obj.destroy();
-  }
-
-  private shuffle<T>(arr: T[]): void {
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
   }
 }

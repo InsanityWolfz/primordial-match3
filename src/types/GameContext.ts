@@ -15,6 +15,13 @@ export interface GameContext {
   turnsRemaining: number;
   isSwapping: boolean;
   ownedPowerUps: OwnedPowerUp[];
+  ownedModifiers: string[];
+
+  // Modifier runtime state (read/written by power executors)
+  fireStreakCount: number;
+  empFiredThisRound: boolean;
+  novaFiredThisRound: boolean;
+  earthquakeFiredThisTurn: boolean;
 
   // UI updates
   updateTurnsDisplay(): void;
