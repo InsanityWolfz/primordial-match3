@@ -141,6 +141,7 @@ export class Gem {
   changeType(newType: GemType): void {
     this.type = newType;
     this.sprite.setTexture(`gem-${newType.name}`);
+    this.sprite.setDisplaySize(this.gemSize, this.gemSize);
   }
 
   destroy(): void {

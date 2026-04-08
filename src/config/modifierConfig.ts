@@ -35,7 +35,7 @@ const MODIFIERS: ModifierDef[] = [
     element: 'fire',
     powerUpId: 'fireball',
     rarity: 'Common',
-    description: 'Each fire gem match grants +3 extra base to Fireball (on top of normal charge).',
+    description: 'Each fire gem match grants +10 extra base to Fireball (on top of normal charge).',
   },
   {
     id: 'fire_heat_retention',
@@ -231,7 +231,7 @@ const MODIFIERS: ModifierDef[] = [
     element: 'earth',
     powerUpId: 'earthquake',
     rarity: 'Common',
-    description: 'Each earth gem match grants +3 extra base to Earthquake.',
+    description: 'Each earth gem match grants +10 extra base to Earthquake.',
   },
   {
     id: 'earth_tremor',
@@ -313,7 +313,7 @@ const MODIFIERS: ModifierDef[] = [
     element: 'lightning',
     powerUpId: 'chainstrike',
     rarity: 'Common',
-    description: 'Each lightning gem match grants +3 extra base to Chain Strike.',
+    description: 'Each lightning gem match grants +10 extra base to Chain Strike.',
   },
   {
     id: 'lightning_conductor',
@@ -469,7 +469,7 @@ const MODIFIERS: ModifierDef[] = [
     element: 'neutral',
     powerUpId: 'any',
     rarity: 'Common',
-    description: 'All powers begin each round with 5 base damage already loaded.',
+    description: 'All powers begin each round with 20 base damage already loaded.',
   },
   {
     id: 'neutral_efficiency',
@@ -477,7 +477,7 @@ const MODIFIERS: ModifierDef[] = [
     element: 'neutral',
     powerUpId: 'any',
     rarity: 'Common',
-    description: 'Match-4s grant +10 base to your lowest-charged power.',
+    description: 'Match-4s grant +30 base to your lowest-charged power.',
   },
   {
     id: 'neutral_scavenger',

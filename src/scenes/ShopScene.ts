@@ -3,7 +3,6 @@ import { GAME_CONFIG } from '../config/gameConfig.ts';
 import type { RunState, OwnedPowerUp } from '../types/RunState.ts';
 import { POWER_UPS, getPowerUpDef } from '../config/powerUps.ts';
 import type { PowerUpDefinition } from '../config/powerUps.ts';
-import { rollModifier } from '../config/roundModifiers.ts';
 import {
   getAllModifiers,
   getModifierDef,
@@ -27,9 +26,8 @@ export class ShopScene extends Phaser.Scene {
 
   private offerIds: string[] = [];
   private offerTypes: OfferType[] = [];
-  private choiceMade = false;
-  private chosenId: string | null = null;
-  private chosenType: OfferType | null = null;
+  private picksRemaining = 2;
+  private chosenItems: Array<{ id: string; type: OfferType }> = [];
   private rerollUsed = false;
 
   private discoverObjects: Phaser.GameObjects.GameObject[] = [];
@@ -46,15 +44,11 @@ export class ShopScene extends Phaser.Scene {
       ownedPowerUps: data.ownedPowerUps ?? [],
       ownedModifiers: data.ownedModifiers ?? [],
     };
-    this.choiceMade = false;
-    this.chosenId = null;
-    this.chosenType = null;
+    this.picksRemaining = 2;
+    this.chosenItems = [];
     this.rerollUsed = false;
 
-    const rolledMod = rollModifier(this.runState.round);
-    this.runState.currentModifier = rolledMod
-      ? { id: rolledMod.id, name: rolledMod.name, description: rolledMod.description }
-      : null;
+    this.runState.currentModifier = null;
 
     this.rollOffers();
     this.drawBackground();
@@ -95,7 +89,7 @@ export class ShopScene extends Phaser.Scene {
     let powersSelected = 0;
     const remaining = [...pool];
 
-    for (let i = 0; i < 3 && remaining.length > 0; i++) {
+    for (let i = 0; i < 5 && remaining.length > 0; i++) {
       // At most 1 power per 3 offerings
       const candidates = powersSelected >= 1
         ? remaining.filter(e => e.type === 'modifier')
@@ -173,60 +167,80 @@ export class ShopScene extends Phaser.Scene {
     this.discoverObjects = [];
 
     let curY = startY;
+    const subtitle = this.picksRemaining > 0
+      ? `pick ${this.picksRemaining} — free`
+      : 'done';
     const headerH = this.drawSectionHeader(
-      this.discoverObjects, curY, 'CHOOSE AN UPGRADE', 'pick 1 — free', 0xffaa44,
+      this.discoverObjects, curY, 'CHOOSE UPGRADES', subtitle, 0xffaa44,
     );
     curY += headerH + 8;
     let totalH = headerH + 8;
 
-    if (this.choiceMade) {
-      let msg: string;
-      let msgColor: string;
-      if (this.chosenId && this.chosenType === 'power') {
-        msg = `✓  ${getPowerUpDef(this.chosenId)?.name ?? this.chosenId} added to your powers`;
-        msgColor = '#44ff88';
-      } else if (this.chosenId && this.chosenType === 'modifier') {
-        msg = `✓  ${getModifierDef(this.chosenId)?.name ?? this.chosenId} modifier unlocked`;
-        msgColor = '#44ff88';
-      } else {
-        msg = '✗  Skipped — nothing taken';
-        msgColor = '#666677';
-      }
-      this.discoverObjects.push(
-        this.add.text(GAME_CONFIG.width / 2, curY + 18, msg, {
-          fontSize: '14px', color: msgColor, fontFamily: 'Arial', fontStyle: 'bold',
-        }).setOrigin(0.5, 0.5),
-      );
-      totalH += 44;
+    if (this.picksRemaining <= 0) {
+      const lines = this.chosenItems.length === 0
+        ? ['✗  Skipped — nothing taken']
+        : this.chosenItems.map(c => {
+            if (c.type === 'power') return `✓  ${getPowerUpDef(c.id)?.name ?? c.id} added`;
+            return `✓  ${getModifierDef(c.id)?.name ?? c.id} unlocked`;
+          });
+      lines.forEach((line, idx) => {
+        const color = line.startsWith('✓') ? '#44ff88' : '#666677';
+        this.discoverObjects.push(
+          this.add.text(GAME_CONFIG.width / 2, curY + 18 + idx * 22, line, {
+            fontSize: '14px', color, fontFamily: 'Arial', fontStyle: 'bold',
+          }).setOrigin(0.5, 0.5),
+        );
+      });
+      totalH += 18 + lines.length * 22 + 8;
       return totalH;
     }
 
-    const cardW = 200;
+    // 3+2 row layout for 5 cards
+    const cardW = 210;
     const cardH = 190;
     const gap = 10;
-    const totalCardsW = 3 * cardW + 2 * gap;
-    const startX = (GAME_CONFIG.width - totalCardsW) / 2;
+    const row1Count = Math.min(3, this.offerIds.length);
+    const row2Count = Math.max(0, this.offerIds.length - 3);
 
-    for (let i = 0; i < this.offerIds.length; i++) {
-      const id = this.offerIds[i];
-      const type = this.offerTypes[i];
-      if (type === 'power') {
-        const def = getPowerUpDef(id);
-        if (def) this.drawPowerCard(startX + i * (cardW + gap), curY, cardW, cardH, def);
-      } else {
-        const def = getModifierDef(id);
-        if (def) this.drawModifierCard(startX + i * (cardW + gap), curY, cardW, cardH, def);
-      }
+    const row1W = row1Count * cardW + (row1Count - 1) * gap;
+    const row1X = (GAME_CONFIG.width - row1W) / 2;
+
+    for (let i = 0; i < row1Count; i++) {
+      this.drawOfferCard(row1X + i * (cardW + gap), curY, cardW, cardH, i);
     }
 
-    totalH += cardH + 8;
-    curY += cardH + 8;
+    let rowsH = cardH;
+    if (row2Count > 0) {
+      const row2Y = curY + cardH + gap;
+      const row2W = row2Count * cardW + (row2Count - 1) * gap;
+      const row2X = (GAME_CONFIG.width - row2W) / 2;
+      for (let i = 0; i < row2Count; i++) {
+        this.drawOfferCard(row2X + i * (cardW + gap), row2Y, cardW, cardH, 3 + i);
+      }
+      rowsH = cardH * 2 + gap;
+    }
+
+    totalH += rowsH + 8;
+    curY += rowsH + 8;
     const rerollH = this.drawRerollButton(curY);
     totalH += rerollH;
     curY += rerollH;
     totalH += this.drawSkipButton(curY);
 
     return totalH;
+  }
+
+  private drawOfferCard(x: number, y: number, w: number, h: number, index: number): void {
+    const id = this.offerIds[index];
+    const type = this.offerTypes[index];
+    if (!id) return;
+    if (type === 'power') {
+      const def = getPowerUpDef(id);
+      if (def) this.drawPowerCard(x, y, w, h, def);
+    } else {
+      const def = getModifierDef(id);
+      if (def) this.drawModifierCard(x, y, w, h, def);
+    }
   }
 
   private drawPowerCard(x: number, y: number, w: number, h: number, def: PowerUpDefinition): void {
@@ -519,29 +533,7 @@ export class ShopScene extends Phaser.Scene {
     this.nextRoundObjects = [];
 
     const cx = GAME_CONFIG.width / 2;
-    const mod = this.runState.currentModifier;
-    let y = startY;
-
-    if (mod) {
-      this.nextRoundObjects.push(
-        this.add.text(cx, y, `⚡ ${mod.name}`, {
-          fontSize: '14px', color: '#ffcc44', fontFamily: 'Arial', fontStyle: 'bold',
-        }).setOrigin(0.5, 0).setDepth(70),
-      );
-      this.nextRoundObjects.push(
-        this.add.text(cx, y + 18, mod.description, {
-          fontSize: '11px', color: '#ccaa44', fontFamily: 'Arial',
-        }).setOrigin(0.5, 0).setDepth(70),
-      );
-      y += 44;
-    } else {
-      this.nextRoundObjects.push(
-        this.add.text(cx, y + 8, 'No special conditions next round', {
-          fontSize: '11px', color: '#444455', fontFamily: 'Arial',
-        }).setOrigin(0.5, 0).setDepth(70),
-      );
-      y += 28;
-    }
+    const y = startY;
 
     const btnW = 280;
     const btnH = 48;
@@ -612,31 +604,37 @@ export class ShopScene extends Phaser.Scene {
   // ── ACTIONS ──────────────────────────────────────────────────────────────────
 
   private takeOffer(id: string, type: OfferType): void {
-    if (this.choiceMade) return;
-    this.chosenId = id;
-    this.chosenType = type;
-    this.choiceMade = true;
+    if (this.picksRemaining <= 0) return;
 
+    this.chosenItems.push({ id, type });
     if (type === 'power') {
       this.runState.ownedPowerUps.push({ powerUpId: id, base: 0, multiplierPool: 0 });
     } else {
       this.runState.ownedModifiers.push(id);
     }
 
+    // Remove the taken offer from the pool so it can't be picked again
+    const idx = this.offerIds.indexOf(id);
+    if (idx >= 0) {
+      this.offerIds.splice(idx, 1);
+      this.offerTypes.splice(idx, 1);
+    }
+
+    this.picksRemaining--;
     this.refreshAll();
   }
 
   private skipChoice(): void {
-    if (this.choiceMade) return;
-    this.chosenId = null;
-    this.chosenType = null;
-    this.choiceMade = true;
+    if (this.picksRemaining <= 0) return;
+    this.picksRemaining = 0;
     this.refreshAll();
   }
 
   private doReroll(): void {
     if (this.rerollUsed) return;
     this.rerollUsed = true;
+    this.picksRemaining = 2;
+    this.chosenItems = [];
     this.rollOffers();
     this.refreshAll();
   }

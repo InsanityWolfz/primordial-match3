@@ -91,9 +91,9 @@ export class PassiveManager {
       }
     }
 
-    // Headstart: all powers +5 base
+    // Headstart: all powers +20 base
     if (this.has('neutral_headstart')) {
-      for (const p of this.activePowers()) p.base += 5;
+      for (const p of this.activePowers()) p.base += 20;
     }
 
     // Synergy: +1 mult to all powers per distinct element owned
@@ -136,7 +136,7 @@ export class PassiveManager {
     };
     const modId = elementBonus[element];
     if (modId && this.has(modId)) {
-      const bonus = element === 'ice' ? 1 : 3; // Permafrost +1, others +3
+      const bonus = element === 'fire' ? 10 : element === 'lightning' ? 10 : element === 'ice' ? 1 : 10; // Embers +10, Static Buildup +10, Slow Build +10, Permafrost +1
       const elementPowerMap: Record<string, string> = {
         fire:      'fireball',
         ice:       'icelance',
@@ -147,10 +147,10 @@ export class PassiveManager {
       if (p) p.base += bonus;
     }
 
-    // Efficiency: match-4+ → +10 base to lowest-charged power
+    // Efficiency: match-4+ → +30 base to lowest-charged power
     if (effectiveSize >= 4 && this.has('neutral_efficiency')) {
       const lowest = this.lowestChargedPower();
-      if (lowest) lowest.base += 10;
+      if (lowest) lowest.base += 30;
     }
 
     return { effectiveSize };

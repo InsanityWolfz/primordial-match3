@@ -32,9 +32,6 @@ export class GameScene extends Phaser.Scene implements GameContext {
   private roundHazardsCleared = 0;
   private roundPowerUses: Record<string, number> = {};
 
-  // Round modifier effect state
-  private activeModifierId: string | null = null;
-
   // Per-round modifier runtime state (public so power executors can read/write via GameContext)
   fireStreakCount = 0;
   hadFireMatchThisTurn = false;
@@ -86,7 +83,6 @@ export class GameScene extends Phaser.Scene implements GameContext {
 
   create(data?: RunState): void {
     this.initializeGame(data);
-    this.applyModifier(data?.currentModifier ?? null);
     this.initializeSystems();
     this.renderGrid();
     this.createDebugButtons();
@@ -95,73 +91,10 @@ export class GameScene extends Phaser.Scene implements GameContext {
 
     this.cascadeSystem.clearInitialMatches().then(() => {
       this.enemyManager.placeEnemies(this.round);
-      // Overcrowded: add 2 extra enemies after normal placement
-      if (this.activeModifierId === 'overcrowded') {
-        this.enemyManager.addExtraEnemies(2, this.round);
-      }
       this.updateEnemyDisplay();
     });
   }
 
-  private applyModifier(modifier: { id: string; name: string; description: string } | null | undefined): void {
-    // Reset modifier state
-    this.activeModifierId = modifier?.id ?? null;
-
-    if (!modifier) return;
-
-    // Modifier name — larger, clickable
-    const modLabel = this.add.text(75, 82, `⚡ ${modifier.name}`, {
-      fontSize: '13px', color: '#ffcc44', fontFamily: 'Arial', fontStyle: 'bold',
-    }).setOrigin(0.5, 0).setDepth(11);
-    modLabel.setInteractive({ useHandCursor: true });
-
-    // Tooltip (hidden until tapped)
-    const tipW = 210, tipPad = 10;
-    const tipBg = this.add.graphics().setDepth(30).setVisible(false);
-    const tipText = this.add.text(0, 0, modifier.description, {
-      fontSize: '12px', color: '#ddbb66', fontFamily: 'Arial',
-      wordWrap: { width: tipW - tipPad * 2 },
-    }).setOrigin(0, 0).setDepth(31).setVisible(false);
-
-    const showTooltip = (): void => {
-      // Position below the label, clamped to screen
-      const lx = modLabel.x - modLabel.width / 2;
-      const ly = modLabel.y + modLabel.height + 4;
-      const tipH = tipText.height + tipPad * 2;
-
-      tipBg.clear();
-      tipBg.fillStyle(0x0d0d22, 0.96);
-      tipBg.fillRoundedRect(lx, ly, tipW, tipH, 6);
-      tipBg.lineStyle(1, 0xcc9944, 0.85);
-      tipBg.strokeRoundedRect(lx, ly, tipW, tipH, 6);
-      tipBg.setVisible(true);
-
-      tipText.setPosition(lx + tipPad, ly + tipPad);
-      tipText.setVisible(true);
-    };
-
-    let open = false;
-    modLabel.on('pointerdown', () => {
-      open = !open;
-      if (open) {
-        showTooltip();
-      } else {
-        tipBg.setVisible(false);
-        tipText.setVisible(false);
-      }
-    });
-
-    switch (modifier.id) {
-      case 'rush':
-        this.turnsRemaining = 10;
-        this.updateTurnsDisplay();
-        break;
-      case 'hazardStorm':
-        // Applied after initializeSystems sets up hazardManager
-        break;
-      // 'overcrowded' is handled post-clearInitialMatches above
-    }
-  }
 
   initializeGame(data?: RunState): void {
     this.grid = new Grid(GAME_CONFIG.gridRows, GAME_CONFIG.gridCols, [...GAME_CONFIG.gemTypes]);
@@ -239,9 +172,6 @@ export class GameScene extends Phaser.Scene implements GameContext {
     });
 
     this.hazardManager = new HazardManager(this, this.grid);
-    if (this.activeModifierId === 'hazardStorm') {
-      this.hazardManager.maxHazards = 25;
-    }
 
     this.passiveManager = new PassiveManager(this);
     this.passiveManager.setFlashCardCallback((id) => this.hudManager.flashCard(id));
@@ -767,7 +697,7 @@ export class GameScene extends Phaser.Scene implements GameContext {
         round: this.round,
         timestamp: Date.now(),
         win: success,
-        modifier: this.activeModifierId,
+        modifier: null,
         essenceEarned: 0,
         gemsDestroyed: 0,
         match3Count: 0,
